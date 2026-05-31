@@ -296,7 +296,7 @@ export function AppShell() {
 
   return (
     <>
-    <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
+    <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 88%, var(--bg-elevated)) 100%)" }}>
       {/* Mobile overlay backdrop */}
       <div
         className="sidebar-overlay-backdrop"
@@ -318,6 +318,8 @@ export function AppShell() {
         style={{
           background: "var(--bg-panel)",
           borderRight: "1px solid var(--border)",
+          backdropFilter: "var(--chrome-blur)",
+          WebkitBackdropFilter: "var(--chrome-blur)",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
@@ -330,13 +332,13 @@ export function AppShell() {
       {/* Center: chat */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
+        <div ref={topBarRef} style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 38, background: "var(--bg-panel)", backdropFilter: "var(--chrome-blur)", WebkitBackdropFilter: "var(--chrome-blur)" }}>
           <button
             onClick={() => setSidebarOpen((v) => !v)}
             title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
-              width: 36, height: 36, padding: 0,
+              width: 38, height: 38, padding: 0,
               background: "none", border: "none", borderRight: "1px solid var(--border)",
               color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
             }}
@@ -363,7 +365,7 @@ export function AppShell() {
             aria-pressed={isDark}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
-              width: 36, height: 36, padding: 0,
+              width: 38, height: 38, padding: 0,
               background: "none", border: "none", borderRight: "1px solid var(--border)",
               color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
             }}
@@ -520,6 +522,9 @@ export function AppShell() {
                 <div style={{
                   background: "var(--bg-panel)",
                   borderBottom: "1px solid var(--border)",
+                  boxShadow: "var(--shadow-popover)",
+                  backdropFilter: "var(--chrome-blur)",
+                  WebkitBackdropFilter: "var(--chrome-blur)",
                 }}>
                   {systemPrompt ? (
                     <div style={{
@@ -597,11 +602,11 @@ export function AppShell() {
           display: "flex",
           flexDirection: "column",
           borderLeft: "1px solid var(--border)",
-          background: "var(--bg)",
+          background: "var(--bg-elevated)",
         }}
       >
         {/* Right panel tab bar */}
-        <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
+        <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 38, backdropFilter: "var(--chrome-blur)", WebkitBackdropFilter: "var(--chrome-blur)" }}>
           <div style={{ flex: 1, overflow: "hidden" }}>
             <TabBar
               tabs={fileTabs}

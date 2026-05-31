@@ -3,11 +3,11 @@
 ## Quick Start
 
 ```bash
-npm run dev   # port 3030
+npm run dev   # port 30141
 ```
 
-Typecheck: `node_modules/.bin/tsc --noEmit`  
-Lint: `node node_modules/next/dist/bin/next lint`  
+Typecheck: `node_modules/.bin/tsc --noEmit`
+Lint: `npm run lint`
 **Never run `next build` during dev** — pollutes `.next/` and breaks `npm run dev`.
 
 ---
@@ -47,14 +47,13 @@ app/api/
   agent/[id]/events/route.ts      GET SSE stream
   files/[...path]/route.ts        GET file contents for viewer
   models/route.ts                 GET { models, modelList, defaultModel }
-  models-config/route.ts          GET/POST — read/write ~/.pi/agent/models.json
+  models-config/route.ts          GET/PUT — read/write ~/.pi/agent/models.json
 
 lib/
   rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
   session-reader.ts   parse .jsonl; getModelNameMap/getModelList/getDefaultModel
   types.ts            shared TypeScript types
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
-  system-prompt-off.ts  minimal system prompt when all tools are disabled
 
 components/
   AppShell.tsx        layout + URL state + tab management

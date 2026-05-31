@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { listAllSessions } from "@/lib/session-reader";
+import { filePathFromSegments, isPathAllowed, parseByteRange } from "@/lib/file-access";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -85,22 +86,6 @@ declare global {
 }
 
 const ALLOWED_ROOTS_TTL_MS = 5_000;
-const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
-
-function normalizeSlashes(filePath: string): string {
-  return filePath.replace(/\\/g, "/");
-}
-
-function isWindowsAbsolutePath(filePath: string): boolean {
-  return WINDOWS_ABSOLUTE_RE.test(filePath) || filePath.startsWith("\\\\") || filePath.startsWith("//");
-}
-
-function filePathFromSegments(segments: string[]): string {
-  const joined = segments.join("/");
-  const slashJoined = normalizeSlashes(joined);
-  if (isWindowsAbsolutePath(slashJoined)) return slashJoined;
-  return "/" + joined.replace(/^\/+/, "");
-}
 
 async function getAllowedRoots(): Promise<Set<string>> {
   const now = Date.now();
@@ -127,23 +112,6 @@ async function getAllowedRoots(): Promise<Set<string>> {
 
   globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
   return roots;
-}
-
-function isPathAllowed(target: string, allowedRoots: Set<string>): boolean {
-  for (const root of allowedRoots) {
-    const useWindowsRules = isWindowsAbsolutePath(target) || isWindowsAbsolutePath(root);
-    const resolver = useWindowsRules ? path.win32 : path;
-    const sep = useWindowsRules ? "\\" : path.sep;
-    const normalized = resolver.resolve(target);
-    const normalizedRoot = resolver.resolve(root);
-    const comparable = useWindowsRules ? normalized.toLowerCase() : normalized;
-    const comparableRoot = useWindowsRules ? normalizedRoot.toLowerCase() : normalizedRoot;
-    const rootWithSep = comparableRoot.endsWith(sep) ? comparableRoot : comparableRoot + sep;
-    if (comparable === comparableRoot || comparable.startsWith(rootWithSep)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function createFileBodyStream(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {
@@ -203,8 +171,8 @@ function streamFile(filePath: string, stat: fs.Stats, contentType: string, range
     });
   }
 
-  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
-  if (!match) {
+  const parsed = parseByteRange(rangeHeader, stat.size);
+  if ("error" in parsed) {
     return new Response(null, {
       status: 416,
       headers: {
@@ -214,25 +182,7 @@ function streamFile(filePath: string, stat: fs.Stats, contentType: string, range
     });
   }
 
-  let start = match[1] ? Number(match[1]) : 0;
-  let end = match[2] ? Number(match[2]) : stat.size - 1;
-  if (!match[1] && match[2]) {
-    const suffixLength = Number(match[2]);
-    start = Math.max(stat.size - suffixLength, 0);
-    end = stat.size - 1;
-  }
-
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= stat.size) {
-    return new Response(null, {
-      status: 416,
-      headers: {
-        ...headers,
-        "Content-Range": `bytes */${stat.size}`,
-      },
-    });
-  }
-
-  end = Math.min(end, stat.size - 1);
+  const { start, end } = parsed;
   const chunkSize = end - start + 1;
   return new Response(createFileBodyStream(filePath, { start, end }), {
     status: 206,

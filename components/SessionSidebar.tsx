@@ -185,7 +185,7 @@ function PiAgentTitle() {
       onClick={handleClick}
       style={{
         background: "none", border: "none", padding: 0, cursor: "default",
-        fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em",
+        fontWeight: 700, fontSize: 15, letterSpacing: 0,
         color: showVersion ? "var(--accent)" : "var(--text)",
         fontFamily: "var(--font-mono)",
         minWidth: "6ch",
@@ -361,7 +361,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 borderRadius: 7,
                 fontSize: 12,
                 fontWeight: 500,
-                letterSpacing: "-0.01em",
+                letterSpacing: 0,
                 flexShrink: 0,
                 transition: "background 0.12s, color 0.12s, border-color 0.12s",
               }}

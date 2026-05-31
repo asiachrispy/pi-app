@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,9 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  const rejected = rejectUnsafeMutation(req);
+  if (rejected) return rejected;
+
   try {
     const body = await req.json() as Record<string, unknown>;
     writeModelsJson(body);

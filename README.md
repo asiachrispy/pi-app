@@ -29,6 +29,8 @@ pi-web -p 8080 -H 127.0.0.1     # 组合使用
 PORT=8080 pi-web                 # 也支持环境变量
 ```
 
+> 安全提示：pi-web 会提供本地会话删除、模型配置和 API key 写入等接口。默认建议只绑定到 localhost；如果要暴露到局域网，请先确认你信任访问方，并显式设置允许远程写操作的环境变量。
+
 ## 功能介绍
 
 - **会话浏览器** — 按工作目录分组展示所有 pi 会话
@@ -52,6 +54,8 @@ PORT=8080 pi-web                 # 也支持环境变量
 ```bash
 npm install
 npm run dev   # 端口 30141
+npm run lint
+npm run test:run
 ```
 
 ## 项目结构

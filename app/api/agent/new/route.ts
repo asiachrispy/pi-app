@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { startRpcSession } from "@/lib/rpc-manager";
+import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 
 // POST /api/agent/new  body: { cwd: string; type: string; message: string; ... }
 // Spawns a brand-new pi session and immediately sends the first command.
 // Returns { sessionId, data } where sessionId is pi's real session id.
 export async function POST(req: Request) {
+  const rejected = rejectUnsafeMutation(req);
+  if (rejected) return rejected;
+
   try {
     const body = await req.json() as { cwd?: string; [key: string]: unknown };
     const { cwd, ...command } = body;

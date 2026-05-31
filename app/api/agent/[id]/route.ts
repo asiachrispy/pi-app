@@ -2,12 +2,16 @@ import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rejected = rejectUnsafeMutation(req);
+  if (rejected) return rejected;
+
   const { id } = await params;
 
   try {

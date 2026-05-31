@@ -11,6 +11,9 @@ try {
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
+  turbopack: {
+    root: __dirname,
+  },
   allowedDevOrigins: ['192.168.*.*'],
   env: {
     NEXT_PUBLIC_APP_VERSION: version,

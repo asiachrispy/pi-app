@@ -1,4 +1,5 @@
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ provider: string }> }
 ) {
+  const rejected = rejectUnsafeMutation(req);
+  if (rejected) return rejected;
+
   const { provider } = await params;
   const { token, code } = (await req.json()) as { token?: string; code?: string };
 

@@ -21,14 +21,16 @@
     "build": "next build --webpack",
     "start": "next start -p 30141",
     "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.75.5",
     "@earendil-works/pi-coding-agent": "^0.75.5",
-    "@lobehub/icons": "^5.6.0",
+    "@lobehub/icons": "5.10.0",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "next": "16.2.1",
+    "next": "16.2.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
@@ -41,9 +43,15 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.1",
-    "postcss": "^8",
+    "eslint-config-next": "16.2.6",
+    "postcss": "^8.5.15",
     "tailwindcss": "^4.2.2",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.7"
+  },
+  "overrides": {
+    "js-cookie": "3.0.8",
+    "mermaid": "11.15.0",
+    "postcss": "$postcss"
   }
 }

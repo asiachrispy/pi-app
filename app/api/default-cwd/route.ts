@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 
 // POST /api/default-cwd
 // Creates ~/pi-cwd-<YYYYMMDD> if it doesn't exist and returns the path.
-export async function POST() {
+export async function POST(req: Request) {
+  const rejected = rejectUnsafeMutation(req);
+  if (rejected) return rejected;
+
   try {
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const dir = join(homedir(), `pi-cwd-${date}`);

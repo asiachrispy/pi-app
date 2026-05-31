@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { DefaultResourceLoader, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,9 @@ export async function GET(req: Request) {
 
 // PATCH /api/skills — toggle disable-model-invocation on a SKILL.md file
 export async function PATCH(req: Request) {
+  const rejected = rejectUnsafeMutation(req);
+  if (rejected) return rejected;
+
   try {
     const body = await req.json() as { filePath: string; disableModelInvocation: boolean };
     const { filePath, disableModelInvocation } = body;
