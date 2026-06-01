@@ -181,6 +181,11 @@ export interface SessionInfo {
   messageCount: number;
   firstMessage: string;
   parentSessionId?: string; // set if this session was forked from another
+  sceneId?: string;
+  sceneName?: string;
+  productTitle?: string;
+  productStatus?: "active" | "completed" | "draft";
+  lastResultSummary?: string;
 }
 
 export interface SessionContext {

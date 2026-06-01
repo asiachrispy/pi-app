@@ -9,9 +9,13 @@ import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { BranchNavigator } from "./BranchNavigator";
+import { WorkbenchHistory } from "./WorkbenchHistory";
+import { WorkbenchHome } from "./WorkbenchHome";
+import { WorkbenchSettings } from "./WorkbenchSettings";
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
+import { getSceneById, type ProductHistoryItem, type Scene } from "@/lib/scenes";
 
 export function AppShell() {
   const router = useRouter();
@@ -29,6 +33,9 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
+  const [workbenchView, setWorkbenchView] = useState<"home" | "history" | "settings" | "chat">("home");
+  const [activeScene, setActiveScene] = useState<Scene | null>(null);
+  const [launchingSceneId, setLaunchingSceneId] = useState<string | null>(null);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
@@ -84,6 +91,15 @@ export function AppShell() {
     return () => ro.disconnect();
   }, [activeTopPanel]);
 
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth <= 640) setSidebarOpen(false);
+    };
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
@@ -94,11 +110,32 @@ export function AppShell() {
   }, []);
 
   const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
+  const [initialSceneId] = useState<string | null>(() => searchParams.get("scene"));
+  const initialSceneRestoredRef = useRef(false);
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !searchParams.get("session"));
   // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
   const suppressCwdBumpRef = useRef(false);
+
+  const ensureWorkbenchCwd = useCallback(async () => {
+    const existing = activeCwd ?? selectedSession?.cwd ?? newSessionCwd;
+    if (existing) return existing;
+    const res = await fetch("/api/default-cwd", { method: "POST" });
+    const data = await res.json() as { cwd?: string; error?: string };
+    if (!res.ok || !data.cwd) {
+      throw new Error(data.error ?? "Unable to create default workspace");
+    }
+    setActiveCwd(data.cwd);
+    return data.cwd;
+  }, [activeCwd, newSessionCwd, selectedSession?.cwd]);
+
+  const resetChatChrome = useCallback(() => {
+    setBranchTree([]);
+    setBranchActiveLeafId(null);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+  }, []);
 
   const handleCwdChange = useCallback((cwd: string | null) => {
     setActiveCwd(cwd);
@@ -114,17 +151,18 @@ export function AppShell() {
       if (prev && prev !== cwd) return null;
       return prev;
     });
+    setActiveScene(null);
+    setWorkbenchView("home");
     setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    setSystemPrompt(null);
-    setActiveTopPanel(null);
+    resetChatChrome();
     router.replace("/", { scroll: false });
-  }, [router]);
+  }, [resetChatChrome, router]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setNewSessionCwd(null);
     setSelectedSession(session);
+    setActiveScene(session.sceneId ? getSceneById(session.sceneId) : null);
+    setWorkbenchView("chat");
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
     setInitialSessionRestored(true);
@@ -144,21 +182,24 @@ export function AppShell() {
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
+    setActiveScene(null);
+    setWorkbenchView("chat");
     setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
-    setSystemPrompt(null);
-    setActiveTopPanel(null);
+    resetChatChrome();
     router.replace("/", { scroll: false });
-  }, [router]);
+  }, [resetChatChrome, router]);
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
     setNewSessionCwd(null);
-    setSelectedSession(session);
+    setSelectedSession({
+      ...session,
+      sceneId: session.sceneId ?? activeScene?.id,
+      sceneName: session.sceneName ?? activeScene?.name,
+    });
     setRefreshKey((k) => k + 1);
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
-  }, [router]);
+  }, [activeScene?.id, activeScene?.name, router]);
 
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -169,6 +210,8 @@ export function AppShell() {
     setRefreshKey((k) => k + 1);
     setSessionKey((k) => k + 1);
     setNewSessionCwd(null);
+    setActiveScene(null);
+    setWorkbenchView("chat");
     setSelectedSession((prev) => ({
       ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
       id: newSessionId,
@@ -186,14 +229,90 @@ export function AppShell() {
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);
+      setActiveScene(null);
+      setWorkbenchView("chat");
       setSessionKey((k) => k + 1);
-      setBranchTree([]);
-      setBranchActiveLeafId(null);
-      setSystemPrompt(null);
-      setActiveTopPanel(null);
+      resetChatChrome();
       router.replace("/", { scroll: false });
     }
-  }, [selectedSession, router]);
+  }, [resetChatChrome, selectedSession, router]);
+
+  const handleOpenHome = useCallback(() => {
+    setSelectedSession(null);
+    setNewSessionCwd(null);
+    setActiveScene(null);
+    setWorkbenchView("home");
+    setSessionKey((k) => k + 1);
+    resetChatChrome();
+    router.replace("/", { scroll: false });
+  }, [resetChatChrome, router]);
+
+  const handleOpenHistoryView = useCallback(() => {
+    setSelectedSession(null);
+    setNewSessionCwd(null);
+    setActiveScene(null);
+    setWorkbenchView("history");
+    setSessionKey((k) => k + 1);
+    resetChatChrome();
+    router.replace("/", { scroll: false });
+  }, [resetChatChrome, router]);
+
+  const handleOpenSettingsView = useCallback(() => {
+    setSelectedSession(null);
+    setNewSessionCwd(null);
+    setActiveScene(null);
+    setWorkbenchView("settings");
+    setSessionKey((k) => k + 1);
+    resetChatChrome();
+    router.replace("/", { scroll: false });
+  }, [resetChatChrome, router]);
+
+  const handleOpenScene = useCallback(async (scene: Scene) => {
+    setLaunchingSceneId(scene.id);
+    try {
+      const cwd = await ensureWorkbenchCwd();
+      setSelectedSession(null);
+      setNewSessionCwd(cwd);
+      setActiveScene(scene);
+      setWorkbenchView("chat");
+      setSessionKey((k) => k + 1);
+      resetChatChrome();
+      router.replace(`?scene=${encodeURIComponent(scene.id)}`, { scroll: false });
+    } finally {
+      setLaunchingSceneId(null);
+    }
+  }, [ensureWorkbenchCwd, resetChatChrome, router]);
+
+  const handleOpenHistoryItem = useCallback((item: ProductHistoryItem) => {
+    setNewSessionCwd(null);
+    setSelectedSession({
+      id: item.sessionId,
+      path: item.path,
+      cwd: item.cwd,
+      created: item.startedAt,
+      modified: item.updatedAt,
+      messageCount: item.messageCount,
+      firstMessage: item.firstMessage,
+      sceneId: item.sceneId ?? undefined,
+      sceneName: item.sceneId ? item.sceneName : undefined,
+      productTitle: item.title,
+      productStatus: item.status,
+      lastResultSummary: item.summary,
+    });
+    setActiveScene(item.sceneId ? getSceneById(item.sceneId) : null);
+    setWorkbenchView("chat");
+    setSessionKey((k) => k + 1);
+    resetChatChrome();
+    router.replace(`?session=${encodeURIComponent(item.sessionId)}`, { scroll: false });
+  }, [resetChatChrome, router]);
+
+  useEffect(() => {
+    if (!initialSceneId || initialSceneRestoredRef.current || initialSessionId) return;
+    const scene = getSceneById(initialSceneId);
+    if (!scene) return;
+    initialSceneRestoredRef.current = true;
+    handleOpenScene(scene);
+  }, [handleOpenScene, initialSceneId, initialSessionId]);
 
   const handleOpenFile = useCallback((filePath: string, fileName: string) => {
     const tabId = `file:${filePath}`;
@@ -219,10 +338,12 @@ export function AppShell() {
   }, [fileTabs]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
-  const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
+  const effectiveNewSessionCwd = newSessionCwd ?? (workbenchView === "chat" && selectedSession === null && activeCwd ? activeCwd : null);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
+  const activeChatScene = activeScene ?? (selectedSession?.sceneId ? getSceneById(selectedSession.sceneId) : null);
+  const settingsSkillsDisabled = !activeCwd && !selectedSession?.cwd && !newSessionCwd;
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
 
@@ -386,8 +507,33 @@ export function AppShell() {
               </svg>
             )}
           </button>
+          <div style={{ display: "flex", alignItems: "center", height: "100%", borderRight: "1px solid var(--border)" }}>
+            {([
+              { id: "home", label: "Home", onClick: handleOpenHome },
+              { id: "history", label: "History", onClick: handleOpenHistoryView },
+              { id: "settings", label: "Settings", onClick: handleOpenSettingsView },
+            ] as const).map((item) => (
+              <button
+                key={item.id}
+                onClick={item.onClick}
+                style={{
+                  height: "100%",
+                  padding: "0 12px",
+                  border: "none",
+                  borderTop: workbenchView === item.id ? "2px solid var(--accent)" : "2px solid transparent",
+                  background: workbenchView === item.id ? "var(--bg-selected)" : "none",
+                  color: workbenchView === item.id ? "var(--text)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
           {showChat && (
-            <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+            <div className="chat-branch-tools" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               <BranchNavigator
                 tree={branchTree}
                 activeLeafId={branchActiveLeafId}
@@ -571,25 +717,24 @@ export function AppShell() {
               onSystemPromptChange={handleSystemPromptChange}
               onSessionStatsChange={handleSessionStatsChange}
               onContextUsageChange={handleContextUsageChange}
+              scene={activeChatScene}
             />
           ) : showPlaceholder ? (
-            activeCwd ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
-                Select a session from the sidebar
-              </div>
+            workbenchView === "history" ? (
+              <WorkbenchHistory onOpenHistory={handleOpenHistoryItem} />
+            ) : workbenchView === "settings" ? (
+              <WorkbenchSettings
+                onOpenModels={() => setModelsConfigOpen(true)}
+                onOpenSkills={() => setSkillsConfigOpen(true)}
+                skillsDisabled={settingsSkillsDisabled}
+              />
             ) : (
-              <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "flex-start", gap: 8, userSelect: "none", pointerEvents: "none" }}>
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}>
-                  <line x1="20" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" />
-                </svg>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Get Started</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
-                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>Select a project directory from the sidebar<br />
-                    <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>Add models via the <strong style={{ color: "var(--text)" }}>Models</strong> button at the bottom
-                  </div>
-                </div>
-              </div>
+              <WorkbenchHome
+                onOpenScene={handleOpenScene}
+                onOpenHistory={handleOpenHistoryItem}
+                onOpenSettings={handleOpenSettingsView}
+                launchingSceneId={launchingSceneId}
+              />
             )
           ) : null}
         </div>

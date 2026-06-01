@@ -5,6 +5,7 @@ import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ToolEntry } from "@/components/ToolPanel";
+import type { Scene } from "@/lib/scenes";
 
 export interface SessionData {
   sessionId: string;
@@ -66,6 +67,7 @@ export interface UseAgentSessionOptions {
   onSystemPromptChange?: (prompt: string | null) => void;
   setNewSessionModel?: (model: { provider: string; modelId: string } | null) => void;
   setToolPreset?: (preset: "none" | "default" | "full") => void;
+  scene?: Scene | null;
 }
 
 export type ThinkingLevelOption = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -86,6 +88,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange,
+    scene,
   } = opts;
 
   const isNew = session === null && newSessionCwd !== null;
@@ -354,12 +357,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (selectedModel) setPendingModel(selectedModel);
         const { PRESET_NONE, PRESET_DEFAULT, PRESET_FULL } = await import("@/components/ToolPanel");
         const toolNames = toolPreset === "none" ? PRESET_NONE : toolPreset === "default" ? PRESET_DEFAULT : PRESET_FULL;
-        const res = await fetch("/api/agent/new", {
+        const res = await fetch(scene ? `/api/scenes/${encodeURIComponent(scene.id)}/launch` : "/api/agent/new", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             cwd: newSessionCwd,
-            type: "prompt",
+            ...(scene ? {} : { type: "prompt" }),
             message,
             toolNames,
             ...(piImages?.length ? { images: piImages } : {}),
@@ -381,6 +384,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           modified: new Date().toISOString(),
           messageCount: 1,
           firstMessage: message,
+          sceneId: scene?.id,
+          sceneName: scene?.name,
+          productTitle: scene ? message : undefined,
+          productStatus: scene ? "active" : undefined,
         });
       } else if (session) {
         connectEvents(session.id);
@@ -396,7 +403,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated]);
+  }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated, scene]);
 
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;

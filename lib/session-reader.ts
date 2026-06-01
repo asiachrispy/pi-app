@@ -2,6 +2,8 @@ import { SessionManager, buildSessionContext as piBuildSessionContext, getAgentD
 import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
+import { readProductSessionMetadata } from "./scene-metadata";
+import { getSceneById } from "./scenes";
 
 export { getAgentDir };
 
@@ -13,9 +15,12 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
   const piSessions: PiSessionInfo[] = await SessionManager.listAll();
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(s.path, s.id);
+  const productMetadata = readProductSessionMetadata();
 
   const cache = getPathCache();
   return piSessions.map((s) => {
+    const metadata = productMetadata[s.id];
+    const scene = metadata ? getSceneById(metadata.sceneId) : null;
     // Populate path cache so resolveSessionPath works without a full scan
     cache.set(s.id, s.path);
     return {
@@ -28,6 +33,11 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
       messageCount: s.messageCount,
       firstMessage: s.firstMessage || "(no messages)",
       parentSessionId: s.parentSessionPath ? pathToId.get(s.parentSessionPath) : undefined,
+      sceneId: metadata?.sceneId,
+      sceneName: scene?.name,
+      productTitle: metadata?.title,
+      productStatus: metadata?.status,
+      lastResultSummary: metadata?.lastResultSummary,
     };
   });
 }
@@ -187,6 +197,5 @@ export function getLeafId(entries: SessionEntry[]): string | null {
   if (entries.length === 0) return null;
   return entries[entries.length - 1].id;
 }
-
 
 
