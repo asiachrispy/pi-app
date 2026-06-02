@@ -3,6 +3,7 @@
 @theme {
   --color-bg: var(--bg);
   --color-bg-panel: var(--bg-panel);
+  --color-bg-elevated: var(--bg-elevated);
   --color-bg-hover: var(--bg-hover);
   --color-bg-selected: var(--bg-selected);
   --color-border: var(--border);
@@ -297,6 +298,9 @@ span.linenumber {
   .chat-stats-center {
     display: none !important;
   }
+  .chat-branch-tools {
+    display: none !important;
+  }
   .sidebar-container {
     position: fixed !important;
     top: 0;
@@ -331,4 +335,3 @@ span.linenumber {
     display: none !important;
   }
 }
-

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -8,6 +8,7 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
+import { buildMarkdownExport, getActionsForScene, type Scene, type SceneAction } from "@/lib/scenes";
 
 interface Props {
   session: SessionInfo | null;
@@ -21,6 +22,7 @@ interface Props {
   onSystemPromptChange?: (prompt: string | null) => void;
   onSessionStatsChange?: (stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
+  scene?: Scene | null;
 }
 
 function phaseLabel(phase: AgentPhase): string {
@@ -90,7 +92,65 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange }: Props) {
+function SceneHeader({
+  scene,
+  actions,
+  latestAssistantText,
+  status,
+  onStarter,
+  onAction,
+}: {
+  scene: Scene;
+  actions: SceneAction[];
+  latestAssistantText: string;
+  status: string | null;
+  onStarter: (prompt: string) => void;
+  onAction: (action: SceneAction) => void;
+}) {
+  return (
+    <div className="shrink-0 border-b border-border bg-bg-panel px-4 py-3 backdrop-blur">
+      <div className="mx-auto flex max-w-[980px] flex-wrap items-center gap-3">
+        <div className="min-w-[220px] flex-1">
+          <div className="flex items-center gap-2">
+            <span className="rounded-[6px] border border-border bg-bg-subtle px-2 py-0.5 text-[11px] font-medium text-text-muted">{scene.category}</span>
+            <span className="text-[11px] text-text-dim">{scene.outputStyle}</span>
+          </div>
+          <div className="mt-1 text-[16px] font-semibold leading-snug text-text">{scene.name}</div>
+          <div className="mt-1 max-w-[760px] text-[12px] leading-5 text-text-muted">{scene.description}</div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          {actions.map((action) => {
+            const disabled = (action.type === "copy" || action.type === "export") && !latestAssistantText;
+            return (
+              <button
+                key={action.id}
+                onClick={() => onAction(action)}
+                disabled={disabled}
+                title={action.description}
+                className="h-8 rounded-[7px] border border-border bg-bg-elevated px-3 text-[12px] font-medium text-text-muted hover:bg-bg-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {status && (action.type === "copy" || action.type === "export") ? status : action.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mx-auto mt-3 flex max-w-[980px] gap-2 overflow-x-auto pb-1">
+        {scene.suggestedStarters.map((starter) => (
+          <button
+            key={starter.id}
+            onClick={() => onStarter(starter.prompt)}
+            className="shrink-0 rounded-[7px] border border-border bg-bg-subtle px-3 py-1.5 text-[12px] text-text-muted hover:bg-bg-hover hover:text-text"
+          >
+            {starter.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, scene }: Props) {
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
@@ -105,7 +165,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     handleToolPresetChange, handleThinkingLevelChange, handleAgentEventRef,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
-    modelsRefreshKey, onBranchDataChange, onSystemPromptChange,
+    modelsRefreshKey, onBranchDataChange, onSystemPromptChange, scene,
   });
 
   const { soundEnabled, onSoundToggle, playDoneSound } = useAudio();
@@ -166,6 +226,60 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const currentThinkingLevelMap = displayModelValue
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
+
+  const sceneActions = useMemo(() => scene ? getActionsForScene(scene) : [], [scene]);
+  const latestAssistantText = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role !== "assistant") continue;
+      return msg.content
+        .filter((block): block is import("@/lib/types").TextContent => block.type === "text")
+        .map((block) => block.text)
+        .join("\n")
+        .trim();
+    }
+    return "";
+  }, [messages]);
+  const [sceneActionStatus, setSceneActionStatus] = useState<string | null>(null);
+
+  const copyLatestResult = useCallback(async () => {
+    if (!latestAssistantText) return;
+    await navigator.clipboard?.writeText(latestAssistantText);
+    setSceneActionStatus("Copied");
+    setTimeout(() => setSceneActionStatus(null), 1500);
+  }, [latestAssistantText]);
+
+  const exportLatestResult = useCallback(() => {
+    if (!scene || !latestAssistantText) return;
+    const markdown = buildMarkdownExport({
+      scene,
+      title: session?.productTitle ?? session?.name ?? scene.name,
+      content: latestAssistantText,
+      generatedAt: new Date().toISOString(),
+    });
+    const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${scene.id}-${Date.now()}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setSceneActionStatus("Exported");
+    setTimeout(() => setSceneActionStatus(null), 1500);
+  }, [latestAssistantText, scene, session?.name, session?.productTitle]);
+
+  const runSceneAction = useCallback((action: SceneAction) => {
+    if (action.type === "copy") {
+      copyLatestResult();
+      return;
+    }
+    if (action.type === "export") {
+      exportLatestResult();
+      return;
+    }
+    chatInputRef?.current?.insertIfEmpty(`Use the latest result and ${action.description.toLowerCase()}`);
+  }, [chatInputRef, copyLatestResult, exportLatestResult]);
 
   const chatInputElement = (
     <ChatInput
@@ -251,37 +365,55 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
       )}
 
+      {scene && (
+        <SceneHeader
+          scene={scene}
+          actions={sceneActions}
+          latestAssistantText={latestAssistantText}
+          status={sceneActionStatus}
+          onStarter={(prompt) => chatInputRef?.current?.insertIfEmpty(prompt)}
+          onAction={runSceneAction}
+        />
+      )}
+
       {isEmptyNew ? (
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
           <div className="w-full max-w-[820px]">
-            <div
-              className="mb-3"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                marginLeft: 16,
-                marginRight: 52,
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4 }}>
-                <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0, color: "var(--text)" }}>π</span>
-                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0 }}>Pi Agent Web</span>
-                <span style={{ fontSize: 14, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                  <Typewriter phrases={TYPEWRITER_PHRASES} />
-                </span>
+            {scene ? (
+              <div className="mb-4 rounded-[8px] border border-border bg-bg-panel p-4">
+                <div className="text-[13px] font-semibold text-text">{scene.name}</div>
+                <div className="mt-2 text-[12px] leading-5 text-text-muted">{scene.defaultPrompt}</div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
-                </span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
-                </span>
+            ) : (
+              <div
+                className="mb-3"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginLeft: 16,
+                  marginRight: 52,
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4 }}>
+                  <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0, color: "var(--text)" }}>π</span>
+                  <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0 }}>Pi Agent Web</span>
+                  <span style={{ fontSize: 14, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                    <Typewriter phrases={TYPEWRITER_PHRASES} />
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
             {chatInputElement}
           </div>
         </div>

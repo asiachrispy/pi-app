@@ -10,6 +10,8 @@ import {
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
+import { readProductSessionMetadata } from "@/lib/scene-metadata";
+import { getSceneById } from "@/lib/scenes";
 
 export async function GET(
   req: Request,
@@ -36,6 +38,8 @@ export async function GET(
     try { modified = statSync(filePath).mtime.toISOString(); } catch { /* use header timestamp */ }
     const allSessions = await listAllSessions();
     const parentSessionId = allSessions.find((s) => s.id === id)?.parentSessionId;
+    const productMetadata = readProductSessionMetadata()[id];
+    const scene = productMetadata ? getSceneById(productMetadata.sceneId) : null;
     const info = header ? {
       path: filePath,
       id: header.id,
@@ -52,6 +56,11 @@ export async function GET(
           })()
         : "(no messages)",
       parentSessionId,
+      sceneId: productMetadata?.sceneId,
+      sceneName: scene?.name,
+      productTitle: productMetadata?.title,
+      productStatus: productMetadata?.status,
+      lastResultSummary: productMetadata?.lastResultSummary,
     } : null;
 
     const url = new URL(req.url);

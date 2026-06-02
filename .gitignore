@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/output/
 
 # next.js
 /.next/
@@ -24,6 +25,7 @@
 .DS_Store
 *.pem
 .superpowers/
+.playwright-cli/
 
 # debug
 npm-debug.log*
