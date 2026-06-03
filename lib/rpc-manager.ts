@@ -43,6 +43,11 @@ export class AgentSessionWrapper {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
       for (const l of this.listeners) l(event);
+      if (event.type === "agent_end") {
+        void import("./push-notifications").then(({ notifyAgentFinished }) =>
+          notifyAgentFinished({ sessionId: this.sessionId }).catch(() => {}),
+        );
+      }
     });
     this.resetIdleTimer();
   }

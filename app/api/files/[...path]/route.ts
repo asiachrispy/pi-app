@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { listAllSessions } from "@/lib/session-reader";
 import { filePathFromSegments, isPathAllowed, parseByteRange } from "@/lib/file-access";
+import { requireApiAuth } from "@/lib/api-auth";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -198,6 +199,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
+  const rejected = requireApiAuth(request);
+  if (rejected) return rejected;
+
   try {
     const { path: segments } = await params;
     const filePath = filePathFromSegments(segments);

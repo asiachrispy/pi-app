@@ -12,6 +12,9 @@ import { BranchNavigator } from "./BranchNavigator";
 import { WorkbenchHistory } from "./WorkbenchHistory";
 import { WorkbenchHome } from "./WorkbenchHome";
 import { WorkbenchSettings } from "./WorkbenchSettings";
+import { RemotePairingHandler } from "./RemotePairingHandler";
+import { RemoteAccessBanner } from "./RemoteAccessBanner";
+import { ServerConnectionBanner } from "./ServerConnectionBanner";
 import { useTheme } from "@/hooks/useTheme";
 import { useCachedResource } from "@/hooks/useControlCollection";
 import { useI18n } from "@/lib/i18n/provider";
@@ -127,6 +130,12 @@ export function AppShell() {
     onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    const onPaired = () => setRefreshKey((key) => key + 1);
+    window.addEventListener("pi-web-pairing-success", onPaired);
+    return () => window.removeEventListener("pi-web-pairing-success", onPaired);
   }, []);
 
   // Right panel — file tabs only
@@ -411,6 +420,9 @@ export function AppShell() {
 
   return (
     <>
+    <RemotePairingHandler />
+    <RemoteAccessBanner />
+    <ServerConnectionBanner />
     <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 88%, var(--bg-elevated)) 100%)" }}>
       {/* Mobile overlay backdrop */}
       <div

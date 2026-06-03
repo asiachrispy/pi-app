@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,9 @@ function writeModelsJson(data: Record<string, unknown>): void {
   writeFileSync(path, JSON.stringify(data, null, 2), "utf8");
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const rejected = requireApiAuth(req);
+  if (rejected) return rejected;
   return NextResponse.json(readModelsJson());
 }
 

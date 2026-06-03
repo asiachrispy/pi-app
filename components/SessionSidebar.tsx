@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useI18n } from "@/lib/i18n/provider";
+import { fetchWithTimeout, isConnectionError } from "@/lib/api-fetch";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 
@@ -224,7 +225,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const loadSessions = useCallback(async (showLoading = false) => {
     try {
       if (showLoading) setLoading(true);
-      const res = await fetch("/api/sessions");
+      const res = await fetchWithTimeout("/api/sessions", { cache: "no-store" });
+      if (res.status === 401) throw new Error("auth");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { sessions: SessionInfo[] };
       setAllSessions(data.sessions);
@@ -235,11 +237,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         sessionRefreshTimerRef.current = setTimeout(() => setSessionRefreshDone(false), 2000);
       }
     } catch (e) {
-      setError(String(e));
+      if (isConnectionError(e)) {
+        setError(t("sessionSidebar.serverUnavailable"));
+      } else if (e instanceof Error && e.message === "auth") {
+        setError(t("remoteAccess.authRequired"));
+      } else {
+        setError(String(e));
+      }
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
@@ -652,7 +660,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         )}
         {error && (
           <div style={{ padding: "12px 14px", color: "#f87171", fontSize: 12 }}>
-            {error}
+            <div>{error}</div>
+            <button
+              type="button"
+              onClick={() => void loadSessions(true)}
+              style={{ marginTop: 8, fontSize: 12, textDecoration: "underline", color: "var(--text-muted)" }}
+            >
+              {t("common.retry")}
+            </button>
           </div>
         )}
         {!loading && !error && filteredSessions.length === 0 && (

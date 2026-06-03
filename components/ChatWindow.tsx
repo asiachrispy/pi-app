@@ -13,6 +13,7 @@ import { buildMarkdownExport, getActionsForScene, summarizeOutputStyle, type Sce
 import { actionPromptAsText, buildActionPrompt } from "@/lib/scene-action-policy";
 import { summarizeForHistory } from "@/lib/history-summary";
 import { suggestNextStep } from "@/lib/next-step-suggestion";
+import { useI18n } from "@/lib/i18n/provider";
 
 interface Props {
   session: SessionInfo | null;
@@ -170,12 +171,14 @@ function SceneHeader({
 }
 
 export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, scene }: Props) {
+  const { t } = useI18n();
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     agentPhase,
+    remoteAuthError,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
@@ -385,8 +388,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center text-red-400">
-        {error}
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+        <div className="text-red-400">{remoteAuthError ? t("remoteAccess.authRequired") : error}</div>
+        {remoteAuthError && (
+          <div className="max-w-md text-[12px] leading-5 text-text-muted">{t("remoteAccess.pairingHint")}</div>
+        )}
       </div>
     );
   }

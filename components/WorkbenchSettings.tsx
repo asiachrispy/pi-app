@@ -7,6 +7,7 @@ import type { AutomationEntry } from "@/lib/automation";
 import type { UsageSummary } from "@/lib/usage";
 import { type Scene } from "@/lib/scenes";
 import { SceneConfigEditor } from "./SceneConfigEditor";
+import { RemoteAccessSettings } from "./RemoteAccessSettings";
 
 interface Props {
   onOpenModels: () => void;
@@ -319,6 +320,8 @@ export function WorkbenchSettings({ onOpenModels, onOpenSkills, onOpenSceneId, s
             </div>
           </div>
         </section>
+
+        <RemoteAccessSettings />
       </div>
       {sceneEditorOpen && (
         <SceneConfigEditor

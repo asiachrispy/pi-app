@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 
-const { readMock, rejectMock } = vi.hoisted(() => ({
+const { readMock, authMock } = vi.hoisted(() => ({
   readMock: vi.fn(),
-  rejectMock: vi.fn(),
+  authMock: vi.fn(),
 }));
 
 vi.mock("@/lib/scene-overrides", () => ({
@@ -10,8 +10,8 @@ vi.mock("@/lib/scene-overrides", () => ({
   upsertSceneOverride: vi.fn(),
   clearSceneOverride: vi.fn(),
 }));
-vi.mock("@/lib/local-request-guard", () => ({
-  rejectUnsafeMutation: rejectMock,
+vi.mock("@/lib/api-auth", () => ({
+  requireApiAuth: authMock,
 }));
 
 describe("GET /api/scene-overrides", () => {
@@ -19,9 +19,9 @@ describe("GET /api/scene-overrides", () => {
     readMock.mockReset().mockReturnValueOnce({
       "report-generation": { outputStyle: "Markdown" },
     });
-    rejectMock.mockReset();
+    authMock.mockReset().mockReturnValueOnce(null);
     const { GET } = await import("./route");
-    const res = await GET();
+    const res = await GET(new Request("http://127.0.0.1/api/scene-overrides"));
     const body = (await res.json()) as {
       overrides?: Record<string, { outputStyle?: string }>;
     };
@@ -35,9 +35,9 @@ describe("GET /api/scene-overrides", () => {
     readMock.mockReset().mockImplementationOnce(() => {
       throw new Error("disk failure");
     });
-    rejectMock.mockReset();
+    authMock.mockReset().mockReturnValueOnce(null);
     const { GET } = await import("./route");
-    const res = await GET();
+    const res = await GET(new Request("http://127.0.0.1/api/scene-overrides"));
     const body = (await res.json()) as { error?: string };
     expect(res.status).toBe(500);
     expect(body.error).toMatch(/Failed to read scene overrides/);

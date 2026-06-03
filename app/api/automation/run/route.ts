@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { buildAutomationRunPrompt, getAutomationById } from "@/lib/automation";
 import { getSceneById } from "@/lib/scenes";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export async function POST(req: Request) {
+  const rejected = requireApiAuth(req);
+  if (rejected) return rejected;
+
   try {
     const body = (await req.json().catch(() => ({}))) as {
       automationId?: unknown;

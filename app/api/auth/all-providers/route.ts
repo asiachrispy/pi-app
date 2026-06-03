@@ -1,11 +1,15 @@
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
 // Providers that use OAuth — handled separately via /api/auth/providers
 const OAUTH_PROVIDER_IDS = new Set(["anthropic", "github-copilot", "openai-codex"]);
 
-export async function GET() {
+export async function GET(req: Request) {
+  const rejected = requireApiAuth(req);
+  if (rejected) return rejected;
+
   const authStorage = AuthStorage.create();
   const registry = ModelRegistry.create(authStorage);
   const all = registry.getAll();

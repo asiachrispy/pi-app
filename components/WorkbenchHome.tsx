@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useCachedResource, invalidateControlResource } from "@/hooks/useControlCollection";
 import { useI18n } from "@/lib/i18n/provider";
+import { fetchWithTimeout } from "@/lib/api-fetch";
 import { summarizeOutputStyle, type ProductHistoryItem, type Scene } from "@/lib/scenes";
 
 interface Props {
@@ -22,15 +23,17 @@ interface HistoryResponse {
 }
 
 const fetchScenes = async (): Promise<Scene[]> => {
-  const res = await fetch("/api/scenes");
+  const res = await fetchWithTimeout("/api/scenes", { cache: "no-store" });
   const data = (await res.json()) as ScenesResponse;
+  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
   if (data.error) throw new Error(data.error);
   return data.scenes ?? [];
 };
 
 const fetchRecentHistory = async (): Promise<ProductHistoryItem[]> => {
-  const res = await fetch("/api/history");
+  const res = await fetchWithTimeout("/api/history", { cache: "no-store" });
   const data = (await res.json()) as HistoryResponse;
+  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
   if (data.error) throw new Error(data.error);
   return data.history ?? [];
 };

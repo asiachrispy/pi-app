@@ -118,6 +118,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [compactError, setCompactError] = useState<string | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
 
+  const [remoteAuthError, setRemoteAuthError] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const agentRunningRef = useRef(false);
@@ -230,13 +231,30 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     };
     es.onerror = () => {
-      if (eventSourceRef.current === es && agentRunningRef.current) {
-        es.close();
-        eventSourceRef.current = null;
-        setTimeout(() => {
-          if (agentRunningRef.current) connectEvents(sid);
-        }, 1000);
-      }
+      void fetch(`/api/agent/${encodeURIComponent(sid)}/events`, { method: "GET" }).then((res) => {
+        if (res.status === 401) {
+          setRemoteAuthError(true);
+          setError("remote-auth-required");
+          es.close();
+          eventSourceRef.current = null;
+          return;
+        }
+        if (eventSourceRef.current === es && agentRunningRef.current) {
+          es.close();
+          eventSourceRef.current = null;
+          setTimeout(() => {
+            if (agentRunningRef.current) connectEvents(sid);
+          }, 1000);
+        }
+      }).catch(() => {
+        if (eventSourceRef.current === es && agentRunningRef.current) {
+          es.close();
+          eventSourceRef.current = null;
+          setTimeout(() => {
+            if (agentRunningRef.current) connectEvents(sid);
+          }, 1000);
+        }
+      });
     };
   }, []);
 
@@ -645,6 +663,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     agentPhase,
+    remoteAuthError,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,

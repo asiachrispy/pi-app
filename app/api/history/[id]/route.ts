@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { listAllSessions } from "@/lib/session-reader";
 import { readProductSessionMetadataMap } from "@/lib/scene-metadata";
 import { buildHistoryItems } from "@/lib/scenes";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const rejected = requireApiAuth(req);
+  if (rejected) return rejected;
+
   try {
     const { id } = await params;
     const sessions = await listAllSessions();

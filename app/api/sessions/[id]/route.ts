@@ -94,6 +94,9 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rejected = rejectUnsafeMutation(req);
+  if (rejected) return rejected;
+
   const { id } = await params;
   try {
     const { name } = await req.json() as { name?: string };
