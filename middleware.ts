@@ -12,6 +12,17 @@ function isPublicApiPath(pathname: string): boolean {
   return PUBLIC_API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+function isPublicSharePath(pathname: string): boolean {
+  return pathname === "/api/share" || pathname.startsWith("/api/share/");
+}
+
+function isPublicApiRequest(pathname: string, method: string): boolean {
+  if (isPublicSharePath(pathname)) {
+    return method === "GET" || method === "HEAD" || method === "OPTIONS";
+  }
+  return isPublicApiPath(pathname) && (method === "POST" || pathname === "/api/remote/client");
+}
+
 function unauthorized(reason: string): NextResponse {
   return NextResponse.json({ error: reason }, { status: 401 });
 }
@@ -26,7 +37,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (isPublicApiPath(pathname) && (request.method === "POST" || pathname === "/api/remote/client")) {
+  if (isPublicApiRequest(pathname, request.method)) {
     return NextResponse.next();
   }
 

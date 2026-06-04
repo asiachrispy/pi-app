@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isKnownSceneId, type SceneOverrides } from "@/lib/scenes";
-import { SCENE_OVERRIDE_SCHEMA_VERSION, sanitizeSceneOverrideFields, type SceneOverridesMap } from "@/lib/scene-overrides";
+import { sanitizeSceneOverrideFields, type SceneOverridesMap } from "@/lib/scene-overrides";
 
 export const SCENE_PACK_SCHEMA_VERSION = 1;
 

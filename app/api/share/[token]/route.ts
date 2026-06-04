@@ -3,6 +3,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, resolveSessionPath } from "@/lib/session-reader";
 import { resolveSessionShare } from "@/lib/session-share";
 import { readProductSessionMetadataMap } from "@/lib/scene-metadata";
+import { buildSharedConversationMessages } from "@/lib/shared-conversation";
 
 export async function GET(
   _req: Request,
@@ -24,16 +25,15 @@ export async function GET(
     const entries = sm.getEntries() as never;
     const leafId = sm.getLeafId();
     const context = buildSessionContext(entries, leafId);
-    const header = sm.getHeader();
     const productMetadata = readProductSessionMetadataMap()[share.sessionId];
+    const shared = buildSharedConversationMessages(context.messages, context.entryIds);
 
     return NextResponse.json({
       sessionId: share.sessionId,
       title: productMetadata?.title ?? sm.getSessionName() ?? "Conversation",
-      cwd: header?.cwd ?? "",
       createdAt: share.createdAt,
-      messages: context.messages,
-      entryIds: context.entryIds,
+      messages: shared.messages,
+      entryIds: shared.entryIds,
     });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

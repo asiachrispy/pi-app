@@ -88,7 +88,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   slashCommandsEnabled = false,
   slashCommands = [],
   onSlashCommand,
-  onOpenSettings,
 }: Props, ref) {
   const { t } = useI18n();
   const compactErrorLabel = displayCompactError(compactError ?? null, t);

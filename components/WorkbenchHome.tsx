@@ -46,7 +46,7 @@ export function WorkbenchHome({
     { staleMs: 15_000, retries: 1 },
   );
 
-  const items = history.data ?? [];
+  const items = useMemo(() => history.data ?? [], [history.data]);
   const visibleItems = useMemo(
     () => (showAllHistory ? items : items.slice(0, RECENT_LIMIT)),
     [items, showAllHistory],

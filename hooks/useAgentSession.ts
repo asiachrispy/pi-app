@@ -3,7 +3,6 @@
 import { useState, useCallback, useRef, useEffect, useReducer } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { branchNavigateErrorKey } from "@/lib/branch-navigate-error";
-import { fetchSessionInfo } from "@/lib/fetch-session-info";
 import { normalizeAgentMessage } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { getPresetFromTools, PRESET_DEFAULT, PRESET_FULL, PRESET_NONE, type ToolEntry } from "@/components/ToolPanel";
@@ -568,12 +567,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [loadContext, loadSession]);
 
+  const dataLeafId = data?.leafId ?? null;
+
   const handleClone = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
     setCloning(true);
     try {
-      const leafId = activeLeafId ?? data?.leafId ?? null;
+      const leafId = activeLeafId ?? dataLeafId;
       const result = await sendAgentCommand<{ cancelled?: boolean; newSessionId?: string }>(sid, {
         type: "clone",
         ...(leafId ? { leafId } : {}),
@@ -588,7 +589,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       setCloning(false);
     }
-  }, [activeLeafId, data?.leafId, onSessionForked]);
+  }, [activeLeafId, dataLeafId, onSessionForked]);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
     if (isNew) {
