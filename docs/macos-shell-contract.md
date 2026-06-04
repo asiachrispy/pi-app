@@ -39,6 +39,7 @@ HOST=127.0.0.1 PORT=30141 \
 | 方法 | 用途 |
 |------|------|
 | `pickWorkspaceDirectory()` | 设置页选择工作区；壳持久化 security-scoped bookmark（见 [macos/README.md](../macos/README.md) PL-06） |
+| `pickFiles()` | 对话附加文件：返回所选文件的绝对路径（任意磁盘位置） |
 | `showNotification({ title, body, sessionId })` | 任务完成系统通知 |
 | `openPath(path)` | 打开数据目录 / 导出文件 |
 | `restartServer()` | 重启内嵌 pi-web 子进程 |

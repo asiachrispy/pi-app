@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "path";
 
 const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
@@ -19,6 +20,16 @@ export function filePathFromSegments(segments: string[]): string {
   const slashJoined = normalizeSlashes(joined);
   if (isWindowsAbsolutePath(slashJoined)) return slashJoined;
   return "/" + joined.replace(/^\/+/, "");
+}
+
+/** Read a single file path (local loopback): allowed roots, or any existing regular file. */
+export function canReadFilePath(target: string, allowedRoots: Set<string>): boolean {
+  if (isPathAllowed(target, allowedRoots)) return true;
+  try {
+    return fs.statSync(target).isFile();
+  } catch {
+    return false;
+  }
 }
 
 export function isPathAllowed(target: string, allowedRoots: Set<string>): boolean {

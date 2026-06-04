@@ -23,6 +23,12 @@ import type { ProductHistoryItem } from "@/lib/product-history";
 import type { ToolMode } from "@/lib/pi-web-preferences";
 import { fetchSessionInfo } from "@/lib/fetch-session-info";
 import { hasFork } from "@/lib/branch-tree";
+import {
+  canOpenWithSystemApp,
+  canPreviewInApp,
+  openFileWithSystemApp,
+  resolveFilePreviewKind,
+} from "@/lib/file-preview";
 import { cachePiWebPreferences } from "@/lib/pi-web-preferences-cache";
 
 export function AppShell() {
@@ -366,6 +372,10 @@ export function AppShell() {
   }, [resetChatChrome, router]);
 
   const handleOpenFile = useCallback((filePath: string, fileName: string) => {
+    const kind = resolveFilePreviewKind(filePath, fileName);
+    if (!canPreviewInApp(kind) && canOpenWithSystemApp()) {
+      void openFileWithSystemApp(filePath);
+    }
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => {
       if (prev.find((t) => t.id === tabId)) return prev;
@@ -668,6 +678,7 @@ export function AppShell() {
               toolMode={toolMode}
               onOpenModels={handleOpenModelsConfig}
               onOpenSettings={handleOpenSettingsView}
+              onOpenFile={handleOpenFile}
             />
           ) : showPlaceholder ? (
             workbenchView === "settings" ? (
@@ -728,7 +739,11 @@ export function AppShell() {
         {/* File content */}
         <div style={{ flex: 1, overflow: "hidden" }}>
           {activeFileTab?.filePath ? (
-            <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
+            <FileViewer
+              filePath={activeFileTab.filePath}
+              displayLabel={activeFileTab.label}
+              cwd={activeCwd ?? undefined}
+            />
           ) : (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
               {i18nT("appShell.noFileOpen")}

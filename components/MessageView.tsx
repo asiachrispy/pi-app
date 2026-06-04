@@ -8,7 +8,8 @@ import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/lib/i18n/provider";
-import { displayUserMessageContent } from "@/lib/user-message-display";
+import { displayUserMessageContent, displayUserMessageFilePaths } from "@/lib/user-message-display";
+import { FileAttachmentChip } from "./FileAttachmentChip";
 import type {
   AgentMessage,
   UserMessage,
@@ -33,6 +34,7 @@ interface Props {
   onNavigate?: (entryId: string) => void;
   prevAssistantEntryId?: string;
   onEditContent?: (content: string) => void;
+  onOpenFile?: (filePath: string, fileName: string) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
 }
@@ -69,12 +71,12 @@ function copyText(text: string): Promise<void> {
   }
 }
 
-export function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp }: Props) {
+export function MessageView({ message, isStreaming, toolResults, modelNames, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onOpenFile, showTimestamp, prevTimestamp }: Props) {
   if (message.role === "timelineSummary") {
     return <TimelineSummaryView message={message as TimelineSummaryMessage} />;
   }
   if (message.role === "user") {
-    return <UserMessageView message={message as UserMessage} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
+    return <UserMessageView message={message as UserMessage} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} onOpenFile={onOpenFile} />;
   }
   if (message.role === "assistant") {
     return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} />;
@@ -127,7 +129,7 @@ function TimelineSummaryView({ message }: { message: TimelineSummaryMessage }) {
   );
 }
 
-function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent }: {
+function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onOpenFile }: {
   message: UserMessage;
   entryId?: string;
   onFork?: (entryId: string) => void;
@@ -135,12 +137,14 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
   onNavigate?: (entryId: string) => void;
   prevAssistantEntryId?: string;
   onEditContent?: (content: string) => void;
+  onOpenFile?: (filePath: string, fileName: string) => void;
 }) {
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const content = displayUserMessageContent(message.content);
+  const fileRefs = displayUserMessageFilePaths(message.content);
 
   const imageBlocks: ImageContent[] =
     typeof message.content === "string"
@@ -181,6 +185,19 @@ function UserMessageView({ message, entryId, onFork, forking, onNavigate, prevAs
             wordBreak: "break-word",
           }}
         >
+          {fileRefs.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content || imageBlocks.length ? 8 : 0 }}>
+              {fileRefs.map((ref) => (
+                <FileAttachmentChip
+                  key={ref.path}
+                  name={ref.label}
+                  path={ref.path}
+                  variant="message"
+                  onOpen={onOpenFile ? () => onOpenFile(ref.path, ref.label) : undefined}
+                />
+              ))}
+            </div>
+          )}
           {imageBlocks.length > 0 && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
               {imageBlocks.map((img, i) => {

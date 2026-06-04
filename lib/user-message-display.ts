@@ -1,4 +1,5 @@
 import type { TextContent, UserMessage } from "@/lib/types";
+import { stripFileRefsForDisplay, type FilePathRef } from "@/lib/message-file-refs";
 
 /** Matches pi-coding-agent `parseSkillBlock` user-message format. */
 const SKILL_BLOCK_RE =
@@ -15,10 +16,15 @@ export function displayUserMessageText(raw: string): string {
   const block = trimmed.match(SKILL_BLOCK_RE);
   if (block) {
     const trailing = block[2]?.trim();
-    if (trailing) return trailing;
+    if (trailing) return stripFileRefsForDisplay(trailing).text;
     return `/skill:${block[1]}`;
   }
-  return raw;
+  return stripFileRefsForDisplay(raw).text;
+}
+
+export function displayUserMessageFilePaths(content: UserMessage["content"]): FilePathRef[] {
+  const raw = extractUserMessageText(content);
+  return stripFileRefsForDisplay(raw).refs;
 }
 
 export function extractUserMessageText(content: UserMessage["content"]): string {

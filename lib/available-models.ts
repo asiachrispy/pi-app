@@ -5,6 +5,7 @@ export interface AvailableModelSummary {
   id: string;
   name: string;
   provider: string;
+  input?: ("text" | "image")[];
 }
 
 export function listAvailableModels(): {
@@ -23,7 +24,7 @@ export function listAvailableModels(): {
     const registry = ModelRegistry.create(authStorage);
     const available = registry.getAvailable();
     for (const m of available) {
-      modelList.push({ id: m.id, name: m.name, provider: m.provider });
+      modelList.push({ id: m.id, name: m.name, provider: m.provider, input: m.input });
       const key = `${m.provider}:${m.id}`;
       nameMap.set(key, m.name);
       thinkingLevels[key] = getSupportedThinkingLevels(m);

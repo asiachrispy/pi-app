@@ -3,7 +3,8 @@ import fs, { readdirSync } from "fs";
 import os from "os";
 import path from "path";
 import { listAllSessions } from "@/lib/session-reader";
-import { filePathFromSegments, isPathAllowed, parseByteRange } from "@/lib/file-access";
+import { canReadFilePath, filePathFromSegments, isPathAllowed, parseByteRange } from "@/lib/file-access";
+import { getAgentDir } from "@/lib/agent-dir";
 import { requireApiAuth } from "@/lib/api-auth";
 
 const IGNORED_NAMES = new Set([
@@ -99,6 +100,7 @@ async function getAllowedRoots(): Promise<Set<string>> {
   for (const s of sessions) {
     if (s.cwd) roots.add(s.cwd);
   }
+  roots.add(getAgentDir());
   // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint
   const home = os.homedir();
   try {
@@ -156,12 +158,22 @@ function createFileBodyStream(filePath: string, range?: { start: number; end: nu
   });
 }
 
-function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null): Response {
-  const headers = {
+function streamFile(
+  filePath: string,
+  stat: fs.Stats,
+  contentType: string,
+  rangeHeader: string | null,
+  inline = false,
+): Response {
+  const headers: Record<string, string> = {
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
     "Accept-Ranges": "bytes",
   };
+  if (inline) {
+    const name = path.basename(filePath);
+    headers["Content-Disposition"] = `inline; filename*=UTF-8''${encodeURIComponent(name)}`;
+  }
 
   if (!rangeHeader) {
     return new Response(createFileBodyStream(filePath), {
@@ -208,7 +220,13 @@ export async function GET(
     const type = request.nextUrl.searchParams.get("type") ?? "list";
 
     const allowedRoots = await getAllowedRoots();
-    if (!isPathAllowed(filePath, allowedRoots)) {
+    const isRead = type === "read";
+    const isWatch = type === "watch";
+    if (isRead || isWatch) {
+      if (!canReadFilePath(filePath, allowedRoots)) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+    } else if (!isPathAllowed(filePath, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
@@ -222,6 +240,13 @@ export async function GET(
     if (type === "read") {
       if (!stat.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
+      }
+      const ext = getExt(filePath);
+      if (ext === "pdf") {
+        if (stat.size > IMAGE_PREVIEW_MAX_BYTES) {
+          return NextResponse.json({ error: "PDF too large (>10MB)" }, { status: 413 });
+        }
+        return streamFile(filePath, stat, "application/pdf", request.headers.get("range"), true);
       }
       const imageMime = getImageMime(filePath);
       if (imageMime) {

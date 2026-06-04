@@ -11,6 +11,9 @@ import {
   getSlashCompletionAtCursor,
   type SlashCommandEntry,
 } from "@/lib/slash-commands";
+import { normalizeFilePathRef, type FilePathRef } from "@/lib/message-file-refs";
+import { pickFilePathsNative, stageFilesFromBrowser } from "@/lib/stage-uploaded-files";
+import { FileAttachmentChip } from "./FileAttachmentChip";
 
 function displayCompactError(compactError: string | null, t: (key: TranslationKey) => string): string | null {
   if (!compactError) return null;
@@ -24,6 +27,8 @@ export interface AttachedImage {
   previewUrl: string; // object URL for display
 }
 
+export type AttachedFilePath = FilePathRef;
+
 interface ModelOption {
   provider: string;
   modelId: string;
@@ -31,17 +36,18 @@ interface ModelOption {
 }
 
 interface Props {
-  onSend: (message: string, images?: AttachedImage[]) => void;
+  onSend: (message: string, images?: AttachedImage[], fileRefs?: FilePathRef[]) => void;
   onAbort: () => void;
-  onSteer?: (message: string, images?: AttachedImage[]) => void;
-  onFollowUp?: (message: string, images?: AttachedImage[]) => void;
+  onSteer?: (message: string, images?: AttachedImage[], fileRefs?: FilePathRef[]) => void;
+  onFollowUp?: (message: string, images?: AttachedImage[], fileRefs?: FilePathRef[]) => void;
   /** Agent loop active: stop button, queued send, disabled attach. */
   isStreaming: boolean;
   /** Token/tool/retry phase: Steer/Follow-up chrome (orange border, inline buttons). */
   steerMode?: boolean;
   model?: { provider: string; modelId: string } | null;
   modelNames?: Record<string, string>;
-  modelList?: { id: string; name: string; provider: string }[];
+  modelList?: { id: string; name: string; provider: string; input?: ("text" | "image")[] }[];
+  supportsImages?: boolean;
   onModelChange?: (provider: string, modelId: string) => void;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
@@ -65,12 +71,14 @@ interface Props {
   slashCommands?: SlashCommandEntry[];
   onSlashCommand?: (message: string) => void;
   onOpenSettings?: () => void;
+  onOpenFile?: (filePath: string, fileName: string) => void;
 }
 
 export interface ChatInputHandle {
   insertText: (text: string) => void;
   insertIfEmpty: (text: string) => void;
   addImages: (files: File[]) => void;
+  addFiles: (files: File[]) => void;
 }
 
 const TOOL_PRESETS = ["off", "default", "full"] as const;
@@ -78,7 +86,7 @@ const TOOL_PRESET_MAP: Record<"off" | "default" | "full", "none" | "default" | "
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"] as const;
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, steerMode = false, model, modelNames, modelList, onModelChange,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, steerMode = false, model, modelNames, modelList, supportsImages = true, onModelChange,
   onCompact, onAbortCompaction, isCompacting, compactError, toolPreset, onToolPresetChange, showAdvancedTools = false,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
@@ -88,6 +96,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   slashCommandsEnabled = false,
   slashCommands = [],
   onSlashCommand,
+  onOpenFile,
 }: Props, ref) {
   const { t } = useI18n();
   const compactErrorLabel = displayCompactError(compactError ?? null, t);
@@ -97,6 +106,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFilePath[]>([]);
+  const [stagingFiles, setStagingFiles] = useState(false);
+  const [attachFileError, setAttachFileError] = useState<string | null>(null);
   const [cursorPos, setCursorPos] = useState(0);
   const [slashHighlight, setSlashHighlight] = useState(0);
   const [exportingHtml, setExportingHtml] = useState(false);
@@ -109,6 +121,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const generalFileInputRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -148,9 +161,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     addImages(files: File[]) {
       processImageFiles(files);
     },
+    addFiles(files: File[]) {
+      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+      const otherFiles = files.filter((f) => !f.type.startsWith("image/"));
+      if (imageFiles.length && supportsImages) void processImageFiles(imageFiles);
+      if (otherFiles.length) void processGeneralFiles(otherFiles);
+      else if (imageFiles.length && !supportsImages) void processGeneralFiles(imageFiles);
+    },
   }));
 
   const processImageFiles = useCallback(async (files: File[]) => {
+    if (!supportsImages) return;
     const imageFiles = files.filter((f) => f.type.startsWith("image/"));
     if (!imageFiles.length) return;
     const newImages = await Promise.all(
@@ -170,7 +191,52 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       )
     );
     setAttachedImages((prev) => [...prev, ...newImages]);
+  }, [supportsImages]);
+
+  const addFileRefs = useCallback((refs: FilePathRef[]) => {
+    if (!refs.length) return;
+    setAttachedFiles((prev) => {
+      const seen = new Set(prev.map((f) => f.path));
+      const next = [...prev];
+      for (const ref of refs) {
+        const normalized = normalizeFilePathRef(ref);
+        if (seen.has(normalized.path)) continue;
+        seen.add(normalized.path);
+        next.push(normalized);
+      }
+      return next;
+    });
   }, []);
+
+  const processGeneralFiles = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    setAttachFileError(null);
+    setStagingFiles(true);
+    try {
+      const refs = await stageFilesFromBrowser(files);
+      addFileRefs(refs);
+    } catch (err) {
+      setAttachFileError(err instanceof Error ? err.message : t("chatInput.attachFileFailed"));
+    } finally {
+      setStagingFiles(false);
+    }
+  }, [addFileRefs, t]);
+
+  const pickAttachFiles = useCallback(async () => {
+    if (isStreaming || stagingFiles) return;
+    setAttachFileError(null);
+    if (typeof window !== "undefined" && window.piNative?.pickFiles) {
+      try {
+        const refs = await pickFilePathsNative();
+        if (refs?.length) addFileRefs(refs);
+        return;
+      } catch (err) {
+        setAttachFileError(err instanceof Error ? err.message : t("chatInput.attachFileFailed"));
+        return;
+      }
+    }
+    generalFileInputRef.current?.click();
+  }, [isStreaming, stagingFiles, addFileRefs, t]);
 
   const removeImage = useCallback((index: number) => {
     setAttachedImages((prev) => {
@@ -188,30 +254,48 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, []);
 
+  const clearAttachedFiles = useCallback(() => {
+    setAttachedFiles([]);
+  }, []);
+
+  useEffect(() => {
+    if (!supportsImages) clearImages();
+  }, [supportsImages, clearImages]);
+
+  const hasAttachments = attachedImages.length > 0 || attachedFiles.length > 0;
+
   const handleSend = useCallback(() => {
     const msg = value.trim();
-    if (!msg && !attachedImages.length) return;
+    if (!msg && !hasAttachments) return;
     if (isStreaming) return;
-    onSend(msg, attachedImages.length ? attachedImages : undefined);
+    onSend(
+      msg,
+      attachedImages.length ? attachedImages : undefined,
+      attachedFiles.length ? attachedFiles : undefined,
+    );
     setValue("");
     clearImages();
+    clearAttachedFiles();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, attachedImages, isStreaming, onSend, clearImages]);
+  }, [value, hasAttachments, attachedImages, attachedFiles, isStreaming, onSend, clearImages, clearAttachedFiles]);
 
   const sendQueued = useCallback((mode: "steer" | "followup") => {
     const msg = value.trim();
-    if (!msg && !attachedImages.length) return;
+    if (!msg && !hasAttachments) return;
+    const images = attachedImages.length ? attachedImages : undefined;
+    const refs = attachedFiles.length ? attachedFiles : undefined;
     if (mode === "steer" && onSteer) {
-      onSteer(msg, attachedImages.length ? attachedImages : undefined);
+      onSteer(msg, images, refs);
     } else if (mode === "followup" && onFollowUp) {
-      onFollowUp(msg, attachedImages.length ? attachedImages : undefined);
+      onFollowUp(msg, images, refs);
     }
     setValue("");
     clearImages();
+    clearAttachedFiles();
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [value, attachedImages, onSteer, onFollowUp, clearImages]);
+  }, [value, hasAttachments, attachedImages, attachedFiles, onSteer, onFollowUp, clearImages, clearAttachedFiles]);
 
   const slashCompletion = useMemo(
     () => (slashCommandsEnabled ? getSlashCompletionAtCursor(value, cursorPos) : null),
@@ -316,13 +400,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    if (!supportsImages) return;
     const items = Array.from(e.clipboardData?.items ?? []);
     const imageItems = items.filter((item) => item.type.startsWith("image/"));
     if (!imageItems.length) return;
     e.preventDefault();
     const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
     processImageFiles(files);
-  }, [processImageFiles]);
+  }, [processImageFiles, supportsImages]);
 
 
 
@@ -381,7 +466,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         paddingRight: 52, // 16px base + 36px for ChatMinimap alignment
       }}
     >
-      {/* Hidden file input */}
+      {/* Hidden file inputs */}
       <input
         ref={fileInputRef}
         type="file"
@@ -389,8 +474,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         multiple
         style={{ display: "none" }}
         onChange={(e) => {
+          if (!supportsImages) {
+            e.target.value = "";
+            return;
+          }
           const files = Array.from(e.target.files ?? []);
           processImageFiles(files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={generalFileInputRef}
+        type="file"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          void processGeneralFiles(files);
           e.target.value = "";
         }}
       />
@@ -403,6 +503,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             borderRadius: 6, fontSize: 12, color: "rgba(220,80,80,0.95)",
           }}>
             {exportHtmlError}
+          </div>
+        )}
+        {attachFileError && (
+          <div style={{
+            marginBottom: 8, padding: "5px 10px",
+            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
+            borderRadius: 6, fontSize: 12, color: "rgba(220,80,80,0.95)",
+          }}>
+            {attachFileError}
           </div>
         )}
         {retryInfo && (
@@ -419,6 +528,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {retryInfo.errorMessage
               ? t("chatInput.retryingWithError", { attempt: retryInfo.attempt, maxAttempts: retryInfo.maxAttempts, error: retryInfo.errorMessage })
               : t("chatInput.retrying", { attempt: retryInfo.attempt, maxAttempts: retryInfo.maxAttempts })}
+          </div>
+        )}
+        {(attachedFiles.length > 0 || stagingFiles) && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {stagingFiles && (
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("chatInput.attachFileStaging")}</span>
+            )}
+            {attachedFiles.map((file, i) => (
+              <FileAttachmentChip
+                key={file.path}
+                name={file.label}
+                path={file.path}
+                variant="input"
+                onOpen={onOpenFile ? () => onOpenFile(file.path, file.label) : undefined}
+                onRemove={() => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
+              />
+            ))}
           </div>
         )}
         {/* Image previews */}
@@ -549,16 +675,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {onSteer && (
                 <button
                   onClick={() => sendQueued("steer")}
-                  disabled={!value.trim() && !attachedImages.length}
+                  disabled={!value.trim() && !hasAttachments}
                   title={t("chatInput.steerTitle")}
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "7px 12px",
-                    background: (value.trim() || attachedImages.length) ? "rgba(234,179,8,0.12)" : "none",
+                    background: (value.trim() || hasAttachments) ? "rgba(234,179,8,0.12)" : "none",
                     border: "1px solid rgba(234,179,8,0.35)",
                     borderRadius: 8,
-                    color: (value.trim() || attachedImages.length) ? "rgba(180,130,0,1)" : "var(--text-dim)",
-                    cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
+                    color: (value.trim() || hasAttachments) ? "rgba(180,130,0,1)" : "var(--text-dim)",
+                    cursor: (value.trim() || hasAttachments) ? "pointer" : "not-allowed",
                     fontSize: 13, fontWeight: 600, letterSpacing: 0,
                     transition: "background 0.12s",
                   }}
@@ -572,16 +698,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {onFollowUp && (
                 <button
                   onClick={() => sendQueued("followup")}
-                  disabled={!value.trim() && !attachedImages.length}
+                  disabled={!value.trim() && !hasAttachments}
                   title={t("chatInput.followUpTitle")}
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "7px 12px",
-                    background: (value.trim() || attachedImages.length) ? "rgba(129,140,248,0.12)" : "none",
+                    background: (value.trim() || hasAttachments) ? "rgba(129,140,248,0.12)" : "none",
                     border: "1px solid rgba(129,140,248,0.35)",
                     borderRadius: 8,
-                    color: (value.trim() || attachedImages.length) ? "rgba(99,102,241,1)" : "var(--text-dim)",
-                    cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
+                    color: (value.trim() || hasAttachments) ? "rgba(99,102,241,1)" : "var(--text-dim)",
+                    cursor: (value.trim() || hasAttachments) ? "pointer" : "not-allowed",
                     fontSize: 13, fontWeight: 600, letterSpacing: 0,
                     transition: "background 0.12s",
                   }}
@@ -597,21 +723,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           ) : !isStreaming ? (
             <button
               onClick={handleSend}
-              disabled={!value.trim() && !attachedImages.length}
+              disabled={!value.trim() && !hasAttachments}
               style={{
                 flexShrink: 0,
                 alignSelf: "flex-end",
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "7px 14px",
-                background: (value.trim() || attachedImages.length) ? "var(--accent)" : "var(--bg-panel)",
+                background: (value.trim() || hasAttachments) ? "var(--accent)" : "var(--bg-panel)",
                 border: "none",
                 borderRadius: 10,
-                color: (value.trim() || attachedImages.length) ? "#fff" : "var(--text-dim)",
-                cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
+                color: (value.trim() || hasAttachments) ? "#fff" : "var(--text-dim)",
+                cursor: (value.trim() || hasAttachments) ? "pointer" : "not-allowed",
                 fontSize: 13,
                 fontWeight: 600,
                 letterSpacing: 0,
-                boxShadow: (value.trim() || attachedImages.length) ? "0 8px 18px rgba(0,122,255,0.26)" : "none",
+                boxShadow: (value.trim() || hasAttachments) ? "0 8px 18px rgba(0,122,255,0.26)" : "none",
                 transition: "background 0.15s, box-shadow 0.15s",
               }}
             >
@@ -630,21 +756,49 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {/* LEFT: attach + model selector (idle) or steer/followup toggle (streaming) */}
           <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 2 }}>
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming}
-              title={t("chatInput.attachImage")}
+              onClick={() => void pickAttachFiles()}
+              disabled={isStreaming || stagingFiles}
+              title={t("chatInput.attachFile")}
+              style={{
+                flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                width: 32, height: 32, padding: 0,
+                background: "none", border: "none",
+                borderRadius: 9,
+                color: attachedFiles.length ? "var(--accent)" : "var(--text-muted)",
+                cursor: isStreaming || stagingFiles ? "not-allowed" : "pointer",
+                opacity: isStreaming || stagingFiles ? 0.5 : 1,
+                transition: "background 0.12s, color 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                if (isStreaming || stagingFiles) return;
+                e.currentTarget.style.background = "var(--bg-hover)";
+                e.currentTarget.style.color = attachedFiles.length ? "var(--accent)" : "var(--text)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "none";
+                e.currentTarget.style.color = attachedFiles.length ? "var(--accent)" : "var(--text-muted)";
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <button
+              onClick={() => supportsImages && fileInputRef.current?.click()}
+              disabled={isStreaming || !supportsImages}
+              title={supportsImages ? t("chatInput.attachImage") : t("chatInput.imagesNotSupported")}
               style={{
                 flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
                 width: 32, height: 32, padding: 0,
                 background: "none", border: "none",
                 borderRadius: 9,
                 color: attachedImages.length ? "var(--accent)" : "var(--text-muted)",
-                cursor: isStreaming ? "not-allowed" : "pointer",
-                opacity: isStreaming ? 0.5 : 1,
+                cursor: isStreaming || !supportsImages ? "not-allowed" : "pointer",
+                opacity: isStreaming || !supportsImages ? 0.5 : 1,
                 transition: "background 0.12s, color 0.12s",
               }}
               onMouseEnter={(e) => {
-                if (isStreaming) return;
+                if (isStreaming || !supportsImages) return;
                 e.currentTarget.style.background = "var(--bg-hover)";
                 e.currentTarget.style.color = attachedImages.length ? "var(--accent)" : "var(--text)";
               }}

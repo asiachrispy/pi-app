@@ -27,6 +27,7 @@ final class PiNativeBridge: NSObject, WKScriptMessageHandler {
     window.piNative = {
       version: "0.1.0",
       pickWorkspaceDirectory: () => call("pickWorkspaceDirectory"),
+      pickFiles: () => call("pickFiles"),
       showNotification: (input) => { call("showNotification", input); },
       openPath: (path) => call("openPath", { path }),
       restartServer: () => call("restartServer"),
@@ -58,6 +59,8 @@ final class PiNativeBridge: NSObject, WKScriptMessageHandler {
     switch method {
     case "pickWorkspaceDirectory":
       return await pickWorkspaceDirectory()
+    case "pickFiles":
+      return await pickFiles()
     case "showNotification":
       showNotification(args: args)
       return nil
@@ -71,6 +74,27 @@ final class PiNativeBridge: NSObject, WKScriptMessageHandler {
       return nil
     default:
       throw NSError(domain: "piNative", code: 0, userInfo: [NSLocalizedDescriptionKey: "Unknown method \(method)"])
+    }
+  }
+
+  @MainActor
+  private func pickFiles() async -> [String]? {
+    await withCheckedContinuation { continuation in
+      let panel = NSOpenPanel()
+      panel.canChooseDirectories = false
+      panel.canChooseFiles = true
+      panel.canCreateDirectories = false
+      panel.allowsMultipleSelection = true
+      panel.prompt = "附加"
+      panel.message = "选择要附加的文件（任意位置）"
+      panel.begin { response in
+        guard response == .OK else {
+          continuation.resume(returning: nil)
+          return
+        }
+        let paths = panel.urls.map(\.path)
+        continuation.resume(returning: paths.isEmpty ? nil : paths)
+      }
     }
   }
 
@@ -122,7 +146,11 @@ final class PiNativeBridge: NSObject, WKScriptMessageHandler {
       webView.evaluateJavaScript(script, completionHandler: nil)
       return
     }
-    if let result = result as? String {
+    if let arr = result as? [String],
+       let data = try? JSONSerialization.data(withJSONObject: arr),
+       let encoded = String(data: data, encoding: .utf8) {
+      resultJS = encoded
+    } else if let result = result as? String {
       resultJS = Self.encodeJSONString(result)
     } else {
       resultJS = "null"

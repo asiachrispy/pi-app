@@ -31,6 +31,7 @@ interface Props {
   toolMode?: ToolMode;
   onOpenModels?: () => void;
   onOpenSettings?: () => void;
+  onOpenFile?: (filePath: string, fileName: string) => void;
 }
 
 function phaseLabel(phase: AgentPhase): string {
@@ -100,7 +101,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onBranchNavigatingChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, toolMode = "full", onOpenModels, onOpenSettings }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onBranchNavigatingChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, toolMode = "full", onOpenModels, onOpenSettings, onOpenFile }: Props) {
   const { t } = useI18n();
   const {
     loading, error, messages, entryIds, streamState,
@@ -189,8 +190,17 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
 
+  const supportsImages = (() => {
+    if (!displayModelValue) return true;
+    const entry = modelList.find(
+      (m) => m.provider === displayModelValue.provider && m.id === displayModelValue.modelId,
+    );
+    if (!entry) return true;
+    return entry.input?.includes("image") ?? false;
+  })();
+
   const onDrop = useCallback((files: File[]) => {
-    chatInputRef?.current?.addImages(files);
+    chatInputRef?.current?.addFiles(files);
   }, [chatInputRef]);
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
@@ -266,6 +276,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       model={displayModelValue}
       modelNames={modelNames}
       modelList={modelList}
+      supportsImages={supportsImages}
       onModelChange={handleModelChange}
       onCompact={session || isNew ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
@@ -289,6 +300,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       slashCommands={slashCommands}
       onSlashCommand={slashCommandsEnabled ? handleSend : undefined}
       onOpenSettings={onOpenSettings}
+      onOpenFile={onOpenFile}
     />
   );
 
@@ -454,6 +466,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     onNavigate={agentRunning ? undefined : handleNavigate}
                     prevAssistantEntryId={agentRunning ? undefined : prevAssistantEntryId}
                     onEditContent={(content) => chatInputRef?.current?.insertIfEmpty(content)}
+                    onOpenFile={onOpenFile}
                     showTimestamp={showTimestamp}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                   />

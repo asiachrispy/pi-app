@@ -8,11 +8,22 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/lib/i18n/provider";
+import {
+  canOpenWithSystemApp,
+  openFileWithSystemApp,
+  resolveFilePreviewKind,
+  systemPreviewHintKey,
+} from "@/lib/file-preview";
+import { displayNameFromFilePath } from "@/lib/message-file-refs";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { FilePreviewHeader } from "./FilePreviewHeader";
+import { PdfCanvasViewer } from "./PdfCanvasViewer";
 
 interface Props {
   filePath: string;
   cwd?: string;
+  /** Original filename when disk path is a UUID staging name without extension. */
+  displayLabel?: string;
 }
 
 interface FileData {
@@ -525,17 +536,73 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
   );
 }
 
-export function FileViewer({ filePath, cwd }: Props) {
-  if (isImagePath(filePath)) {
-    return <ImageViewer filePath={filePath} cwd={cwd} />;
-  }
-  if (isAudioPath(filePath)) {
-    return <AudioViewer filePath={filePath} cwd={cwd} />;
-  }
-  return <TextFileViewer filePath={filePath} cwd={cwd} />;
+function SystemFileFallbackViewer({ filePath, cwd, displayLabel }: { filePath: string; cwd?: string; displayLabel?: string }) {
+  const { t } = useI18n();
+  const title = displayLabel?.trim() || getRelativeFilePath(filePath, cwd);
+  const hintKey = systemPreviewHintKey(filePath, displayLabel);
+  const openedViaSystem = canOpenWithSystemApp();
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <FilePreviewHeader title={title} filePath={filePath} />
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 12,
+          padding: 24,
+          textAlign: "center",
+          color: "var(--text-muted)",
+          fontSize: 13,
+          background: "var(--bg-panel)",
+        }}
+      >
+        {openedViaSystem && (
+          <p style={{ margin: 0, maxWidth: 360, color: "var(--text)" }}>{t("fileViewer.systemOpenedExternally")}</p>
+        )}
+        <p style={{ margin: 0, maxWidth: 360 }}>{t(hintKey)}</p>
+        {openedViaSystem && (
+          <button
+            type="button"
+            onClick={() => void openFileWithSystemApp(filePath)}
+            style={{
+              padding: "6px 14px",
+              fontSize: 12,
+              borderRadius: 6,
+              border: "1px solid var(--border)",
+              background: "var(--bg-hover)",
+              color: "var(--text)",
+              cursor: "pointer",
+            }}
+          >
+            {t("fileViewer.openExternally")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function TextFileViewer({ filePath, cwd }: Props) {
+export function FileViewer({ filePath, cwd, displayLabel }: Props) {
+  const kind = resolveFilePreviewKind(filePath, displayLabel);
+  switch (kind) {
+    case "image":
+      return <ImageViewer filePath={filePath} cwd={cwd} />;
+    case "audio":
+      return <AudioViewer filePath={filePath} cwd={cwd} />;
+    case "pdf":
+      return <PdfCanvasViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} />;
+    case "system":
+      return <SystemFileFallbackViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} />;
+    default:
+      return <TextFileViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} />;
+  }
+}
+
+function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
@@ -593,7 +660,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
     }
 
     fetchContent(filePath).then((d) => {
-      if (d?.language === "markdown") setPreviewMode(true);
+      if (d?.language === "markdown" || d?.language === "html") setPreviewMode(true);
     }).finally(() => setLoading(false));
 
     // Set up SSE watch
@@ -632,9 +699,42 @@ function TextFileViewer({ filePath, cwd }: Props) {
   }
 
   if (error) {
+    const title = displayLabel?.trim() || displayNameFromFilePath(filePath) || getRelativeFilePath(filePath, cwd);
     return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 13 }}>
-        {error}
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+        <FilePreviewHeader title={title} filePath={filePath} />
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: 24,
+            color: "#f87171",
+            fontSize: 13,
+          }}
+        >
+          <p style={{ margin: 0 }}>{error}</p>
+          {canOpenWithSystemApp() && (
+            <button
+              type="button"
+              onClick={() => void openFileWithSystemApp(filePath)}
+              style={{
+                padding: "6px 14px",
+                fontSize: 12,
+                borderRadius: 6,
+                border: "1px solid var(--border)",
+                background: "var(--bg-hover)",
+                color: "var(--text)",
+                cursor: "pointer",
+              }}
+            >
+              {t("fileViewer.openExternally")}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -646,9 +746,12 @@ function TextFileViewer({ filePath, cwd }: Props) {
   const lines = data.content.split("\n");
   const hasDiff = prevContent !== null && prevContent !== data.content;
 
+  const title = displayLabel?.trim() || displayNameFromFilePath(filePath) || getRelativeFilePath(filePath, cwd);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Status bar */}
+      <FilePreviewHeader title={title} filePath={filePath} badge={data.language} />
+      {/* Toolbar */}
       <div
         style={{
           display: "flex",
@@ -662,9 +765,6 @@ function TextFileViewer({ filePath, cwd }: Props) {
           flexShrink: 0,
         }}
       >
-        <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
         <span style={{ marginLeft: "auto" }}>{data.language}</span>
         {viewMode === "source" && <span>{lines.length} lines</span>}
         <span>{formatSize(data.size)}</span>
@@ -790,14 +890,14 @@ function TextFileViewer({ filePath, cwd }: Props) {
       </div>
 
       {/* Content area */}
-      <div style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg)", display: "flex", flexDirection: "column" }}>
         {viewMode === "diff" && hasDiff ? (
           <DiffView oldContent={prevContent!} newContent={data.content} language={data.language} />
         ) : isHtml && previewMode ? (
           <iframe
             srcDoc={data.content}
-            sandbox="allow-scripts"
-            style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
+            sandbox="allow-scripts allow-same-origin"
+            style={{ flex: 1, width: "100%", minHeight: 320, border: "none", background: "#fff" }}
             title={t("fileViewer.htmlPreview")}
           />
         ) : isMarkdown && previewMode ? (

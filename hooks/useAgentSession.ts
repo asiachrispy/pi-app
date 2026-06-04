@@ -9,6 +9,7 @@ import { getPresetFromTools, PRESET_DEFAULT, PRESET_FULL, PRESET_NONE, type Tool
 import type { ToolMode } from "@/lib/pi-web-preferences";
 import { readCachedPiWebPreferences } from "@/lib/pi-web-preferences-cache";
 import { toolModeToToolNames } from "@/lib/tool-presets";
+import { appendFileRefsToMessage, type FilePathRef } from "@/lib/message-file-refs";
 
 export interface SessionData {
   sessionId: string;
@@ -80,6 +81,7 @@ export interface ChatInputHandle {
   insertText: (text: string) => void;
   insertIfEmpty: (content: string) => void;
   addImages: (files: File[]) => void;
+  addFiles: (files: File[]) => void;
 }
 
 export interface AttachedImage {
@@ -106,7 +108,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [streamState, dispatch] = useReducer(streamReducer, { isStreaming: false, streamingMessage: null });
   const [agentRunning, setAgentRunning] = useState(false);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
-  const [modelList, setModelList] = useState<{ id: string; name: string; provider: string }[]>([]);
+  const [modelList, setModelList] = useState<{ id: string; name: string; provider: string; input?: ("text" | "image")[] }[]>([]);
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
   const [newSessionModel, setNewSessionModelState] = useState<{ provider: string; modelId: string } | null>(null);
@@ -432,16 +434,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [loadSession, clearAgentRunningLocal]);
 
-  const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
-    if (!message.trim() && !images?.length) return;
+  const handleSend = useCallback(async (message: string, images?: AttachedImage[], fileRefs?: FilePathRef[]) => {
+    if (!message.trim() && !images?.length && !fileRefs?.length) return;
     if (agentRunning) return;
 
-    const imageBlocks = images?.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.data } }));
+    const promptMessage = appendFileRefsToMessage(message, fileRefs ?? []);
+    const imageBlocks = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     const userMsg: AgentMessage = {
       role: "user",
       content: imageBlocks?.length
-        ? [...(message.trim() ? [{ type: "text" as const, text: message }] : []), ...imageBlocks]
-        : message,
+        ? [...(promptMessage.trim() ? [{ type: "text" as const, text: promptMessage }] : []), ...imageBlocks]
+        : promptMessage,
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -463,7 +466,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           body: JSON.stringify({
             cwd: newSessionCwd,
             type: "prompt",
-            message,
+            message: promptMessage,
             toolNames,
             ...(piImages?.length ? { images: piImages } : {}),
             ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
@@ -485,13 +488,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           created: new Date().toISOString(),
           modified: new Date().toISOString(),
           messageCount: 1,
-          firstMessage: message,
+          firstMessage: promptMessage,
         });
       } else if (session) {
         connectEvents(session.id);
         await sendAgentCommand(session.id, {
           type: "prompt",
-          message,
+          message: promptMessage,
           ...(piImages?.length ? { images: piImages } : {}),
         });
         void waitForAgentIdle(session.id);
@@ -624,15 +627,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [isCompacting, loadSession]);
 
-  const handleSteer = useCallback(async (message: string, images?: AttachedImage[]) => {
+  const handleSteer = useCallback(async (message: string, images?: AttachedImage[], fileRefs?: FilePathRef[]) => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    setMessages((prev) => [...prev, { role: "user", content: `[steer] ${message}`, timestamp: Date.now() } as AgentMessage]);
+    const promptMessage = appendFileRefsToMessage(message, fileRefs ?? []);
+    setMessages((prev) => [...prev, { role: "user", content: `[steer] ${promptMessage}`, timestamp: Date.now() } as AgentMessage]);
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     try {
       await sendAgentCommand(sid, {
         type: "steer",
-        message,
+        message: promptMessage,
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
@@ -640,15 +644,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
-  const handleFollowUp = useCallback(async (message: string, images?: AttachedImage[]) => {
+  const handleFollowUp = useCallback(async (message: string, images?: AttachedImage[], fileRefs?: FilePathRef[]) => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    setMessages((prev) => [...prev, { role: "user", content: message, timestamp: Date.now() } as AgentMessage]);
+    const promptMessage = appendFileRefsToMessage(message, fileRefs ?? []);
+    setMessages((prev) => [...prev, { role: "user", content: promptMessage, timestamp: Date.now() } as AgentMessage]);
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     try {
       await sendAgentCommand(sid, {
         type: "follow_up",
-        message,
+        message: promptMessage,
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
@@ -783,7 +788,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   // Load model list
   useEffect(() => {
-    fetch("/api/models").then((r) => r.json()).then((d: { models: Record<string, string>; modelList?: { id: string; name: string; provider: string }[]; defaultModel?: { provider: string; modelId: string } | null; thinkingLevels?: Record<string, string[]>; thinkingLevelMaps?: Record<string, Record<string, string | null>> }) => {
+    fetch("/api/models").then((r) => r.json()).then((d: { models: Record<string, string>; modelList?: { id: string; name: string; provider: string; input?: ("text" | "image")[] }[]; defaultModel?: { provider: string; modelId: string } | null; thinkingLevels?: Record<string, string[]>; thinkingLevelMaps?: Record<string, Record<string, string | null>> }) => {
       setModelNames(d.models);
       if (d.thinkingLevels) setModelThinkingLevels(d.thinkingLevels);
       if (d.thinkingLevelMaps) setModelThinkingLevelMaps(d.thinkingLevelMaps);
