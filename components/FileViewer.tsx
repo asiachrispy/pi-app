@@ -16,6 +16,12 @@ import {
 } from "@/lib/file-preview";
 import { displayNameFromFilePath } from "@/lib/message-file-refs";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import {
+  copyPngBlobToClipboard,
+  downloadPngBlob,
+  makePreviewImageFileName,
+  renderElementToPngBlob,
+} from "@/lib/preview-image-export";
 import { FilePreviewHeader } from "./FilePreviewHeader";
 import { PdfCanvasViewer } from "./PdfCanvasViewer";
 
@@ -60,6 +66,113 @@ function DownloadLink({ filePath, label = "Download" }: { filePath: string; labe
     </a>
   );
 }
+
+function headerButtonStyle(active = false): React.CSSProperties {
+  return {
+    flexShrink: 0,
+    padding: "4px 10px",
+    fontSize: 11,
+    borderRadius: 6,
+    border: "1px solid var(--border)",
+    background: active ? "var(--bg-selected)" : "var(--bg-hover)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 500,
+  };
+}
+
+function PreviewImageActions({
+  getTarget,
+  filePath,
+}: {
+  getTarget: () => HTMLElement | null;
+  filePath: string;
+}) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState<"copy" | "save" | null>(null);
+  const [status, setStatus] = useState<"copied" | "saved" | "fallbackSaved" | "error" | null>(
+    null,
+  );
+
+  const exportBlob = useCallback(async () => {
+    const target = getTarget();
+    if (!target) throw new Error("Preview is not ready");
+    return renderElementToPngBlob(target);
+  }, [getTarget]);
+
+  const copyImage = useCallback(() => {
+    setBusy("copy");
+    setStatus(null);
+    exportBlob()
+      .then(async (blob) => {
+        try {
+          await copyPngBlobToClipboard(blob);
+          setStatus("copied");
+        } catch {
+          downloadPngBlob(blob, makePreviewImageFileName(filePath));
+          setStatus("fallbackSaved");
+        }
+        setTimeout(() => setStatus(null), 1500);
+      })
+      .catch(() => setStatus("error"))
+      .finally(() => setBusy(null));
+  }, [exportBlob, filePath]);
+
+  const saveImage = useCallback(() => {
+    setBusy("save");
+    setStatus(null);
+    exportBlob()
+      .then((blob) => {
+        downloadPngBlob(blob, makePreviewImageFileName(filePath));
+        setStatus("saved");
+        setTimeout(() => setStatus(null), 1500);
+      })
+      .catch(() => setStatus("error"))
+      .finally(() => setBusy(null));
+  }, [exportBlob, filePath]);
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+      {status === "error" && (
+        <span style={{ color: "#f87171", fontSize: 11 }}>{t("fileViewer.imageExportFailed")}</span>
+      )}
+      {status === "fallbackSaved" && (
+        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+          {t("fileViewer.savedInstead")}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={copyImage}
+        disabled={busy !== null}
+        title={t("fileViewer.copyPreviewImage")}
+        style={{ ...headerButtonStyle(status === "copied"), opacity: busy ? 0.65 : 1, cursor: busy ? "not-allowed" : "pointer" }}
+      >
+        {busy === "copy"
+          ? t("fileViewer.exportingImage")
+          : status === "copied"
+          ? t("fileViewer.copiedImage")
+          : status === "fallbackSaved"
+          ? t("fileViewer.savedImage")
+          : t("fileViewer.copyAsImage")}
+      </button>
+      <button
+        type="button"
+        onClick={saveImage}
+        disabled={busy !== null}
+        title={t("fileViewer.savePreviewImage")}
+        style={{ ...headerButtonStyle(status === "saved"), opacity: busy ? 0.65 : 1, cursor: busy ? "not-allowed" : "pointer" }}
+      >
+        {busy === "save"
+          ? t("fileViewer.exportingImage")
+          : status === "saved"
+          ? t("fileViewer.savedImage")
+          : t("fileViewer.saveAsImage")}
+      </button>
+    </div>
+  );
+}
+
 type DiffLine =
   | { type: "unchanged"; text: string; lineNo: number }
   | { type: "removed"; text: string; lineNo: number }
@@ -749,6 +862,8 @@ function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
   const [watching, setWatching] = useState(false);
   const [changeCount, setChangeCount] = useState(0);
   const esRef = useRef<EventSource | null>(null);
+  const markdownPreviewRef = useRef<HTMLDivElement>(null);
+  const htmlPreviewRef = useRef<HTMLIFrameElement>(null);
 
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
     const encoded = encodeFilePathForApi(filePath);
@@ -881,10 +996,25 @@ function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
   const hasDiff = prevContent !== null && prevContent !== data.content;
 
   const title = displayLabel?.trim() || displayNameFromFilePath(filePath) || getRelativeFilePath(filePath, cwd);
+  const canExportPreviewImage = viewMode === "source" && previewMode && (isMarkdown || isHtml);
+  const getPreviewImageTarget = () => {
+    if (isMarkdown) return markdownPreviewRef.current;
+    if (isHtml) return htmlPreviewRef.current?.contentDocument?.body ?? null;
+    return null;
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <FilePreviewHeader title={title} filePath={filePath} badge={data.language} />
+      <FilePreviewHeader
+        title={title}
+        filePath={filePath}
+        badge={data.language}
+        actions={
+          canExportPreviewImage
+            ? <PreviewImageActions getTarget={getPreviewImageTarget} filePath={filePath} />
+            : undefined
+        }
+      />
       {/* Toolbar */}
       <div
         style={{
@@ -1029,6 +1159,7 @@ function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
           <DiffView oldContent={prevContent!} newContent={data.content} language={data.language} />
         ) : isHtml && previewMode ? (
           <iframe
+            ref={htmlPreviewRef}
             srcDoc={data.content}
             sandbox="allow-scripts allow-same-origin"
             style={{ flex: 1, width: "100%", minHeight: 320, border: "none", background: "#fff" }}
@@ -1036,6 +1167,7 @@ function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
           />
         ) : isMarkdown && previewMode ? (
           <div
+            ref={markdownPreviewRef}
             className="markdown-body markdown-file-preview"
             style={{ padding: "24px 32px", maxWidth: 800 }}
           >

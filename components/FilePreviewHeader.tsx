@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useI18n } from "@/lib/i18n/provider";
 import { canOpenWithSystemApp, openFileWithSystemApp } from "@/lib/file-preview";
 
@@ -8,9 +9,10 @@ interface Props {
   filePath: string;
   /** Optional right-side badge before the open button (e.g. "PDF · 12"). */
   badge?: string;
+  actions?: ReactNode;
 }
 
-export function FilePreviewHeader({ title, filePath, badge }: Props) {
+export function FilePreviewHeader({ title, filePath, badge, actions }: Props) {
   const { t } = useI18n();
   const canOpenExternally = canOpenWithSystemApp();
 
@@ -43,6 +45,7 @@ export function FilePreviewHeader({ title, filePath, badge }: Props) {
         {title}
       </span>
       {badge && <span style={{ flexShrink: 0, color: "var(--text-dim)" }}>{badge}</span>}
+      {actions}
       {canOpenExternally && (
         <button
           type="button"

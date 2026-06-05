@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useI18n } from "@/lib/i18n/provider";
 import { fetchWithTimeout, isConnectionError } from "@/lib/api-fetch";
+import { getProjectCwds } from "@/lib/session-projects";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 
@@ -39,22 +40,6 @@ function formatRelativeTime(dateStr: string, t: ReturnType<typeof useI18n>["t"])
   if (hours < 24) return t("sessionSidebar.hoursAgo", { count: hours });
   if (days < 7) return t("sessionSidebar.daysAgo", { count: days });
   return date.toLocaleDateString();
-}
-
-/** Return the 5 most recently active cwds across all sessions */
-function getRecentCwds(sessions: SessionInfo[]): string[] {
-  const latestByCwd = new Map<string, string>(); // cwd -> most recent modified
-  for (const s of sessions) {
-    if (!s.cwd) continue;
-    const prev = latestByCwd.get(s.cwd);
-    if (!prev || s.modified > prev) {
-      latestByCwd.set(s.cwd, s.modified);
-    }
-  }
-  return [...latestByCwd.entries()]
-    .sort((a, b) => b[1].localeCompare(a[1]))
-    .slice(0, 5)
-    .map(([cwd]) => cwd);
 }
 
 function shortenCwd(cwd: string, homeDir?: string): string {
@@ -316,7 +301,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       }
 
       finishRestore(false);
-      const cwds = getRecentCwds(allSessions);
+      const cwds = getProjectCwds(allSessions);
       if (cwds.length > 0) setSelectedCwd(cwds[0]);
       return;
     }
@@ -418,7 +403,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onNewSession?.(tempId, filterCwd);
   }, [filterCwd, onNewSession]);
 
-  const recentCwds = getRecentCwds(allSessions);
+  const projectCwds = getProjectCwds(allSessions);
   const filteredSessions = filterCwd
     ? allSessions.filter((s) => s.cwd === filterCwd)
     : allSessions;
@@ -574,9 +559,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 borderRadius: 8,
                 boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
                 overflow: "hidden",
+                maxHeight: "min(70vh, 520px)",
+                overflowY: "auto",
               }}
             >
-              {recentCwds.map((cwd) => (
+              {projectCwds.map((cwd) => (
                 <button
                   key={cwd}
                   onClick={() => {
@@ -628,7 +615,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     padding: "8px 10px",
                     background: "none",
                     border: "none",
-                    borderTop: recentCwds.length > 0 ? "1px solid var(--border)" : "none",
+                    borderTop: projectCwds.length > 0 ? "1px solid var(--border)" : "none",
                     color: "var(--text-muted)",
                     cursor: "pointer",
                     textAlign: "left",
@@ -672,7 +659,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   <span>{t("sessionSidebar.customPath")}</span>
                 </button>
               ) : (
-                <div style={{ padding: "6px 8px", borderTop: recentCwds.length > 0 ? "none" : undefined }}>
+                <div style={{ padding: "6px 8px", borderTop: projectCwds.length > 0 ? "none" : undefined }}>
                   <input
                     ref={customPathInputRef}
                     value={customPathValue}
