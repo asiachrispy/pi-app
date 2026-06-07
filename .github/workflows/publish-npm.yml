@@ -2,28 +2,50 @@ name: Publish to npm
 on:
   push:
     tags:
-      - "v*"
+      - v*
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release"
+        required: false
+        default: "0.0.0"
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
-          registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - name: Switch file: deps to registry
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Switch file deps to registry versions
         run: |
           sed -i -E 's|"@earendil-works/pi-ai": "file:[^"]*"|"@earendil-works/pi-ai": "^0.78.0"|' package.json
           sed -i -E 's|"@earendil-works/pi-coding-agent": "file:[^"]*"|"@earendil-works/pi-coding-agent": "^0.78.0"|' package.json
           npm install --no-audit --no-fund
-      - run: node_modules/.bin/tsc --noEmit
-      - run: npm run test:run
-      - run: npm run build
-      - run: npm publish --provenance --access public
+
+      - name: Typecheck
+        run: node_modules/.bin/tsc --noEmit
+
+      - name: Test
+        run: npm run test:run
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
