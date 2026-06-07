@@ -18,7 +18,13 @@ jobs:
         with:
           node-version: "22"
           registry-url: https://registry.npmjs.org
-      - run: npm ci
+      - run: |
+          # pi-app's lockfile was generated against a monorepo that has
+          # packages now published to the registry. `npm ci` is too strict
+          # and fails on transitive deps it can't resolve. Use `npm install`
+          # which reconciles.
+          rm -f package-lock.json
+          npm install --no-audit --no-fund --legacy-peer-deps
       - run: node_modules/.bin/tsc --noEmit
       - run: npm run test:run
       - run: npm run build
