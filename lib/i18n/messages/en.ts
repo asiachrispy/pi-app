@@ -1,6 +1,6 @@
 export const en = {
   metadata: {
-    title: "Pi Agent Web",
+    title: "Pi-Agent",
     description: "Pi Coding Agent Web Interface",
   },
   common: {
@@ -58,7 +58,7 @@ export const en = {
     minutesAgo: "{count}m ago",
     hoursAgo: "{count}h ago",
     daysAgo: "{count}d ago",
-    title: "Pi Agent Web",
+    title: "Pi-Agent",
     newSessionIn: "New session in {cwd}",
     selectProjectFirst: "Select a project first",
     newSession: "New",

@@ -1,6 +1,6 @@
 export const zhCN = {
   metadata: {
-    title: "Pi Agent Web",
+    title: "Pi-Agent",
     description: "Pi 编码助手 Web 界面",
   },
   common: {
@@ -58,7 +58,7 @@ export const zhCN = {
     minutesAgo: "{count} 分钟前",
     hoursAgo: "{count} 小时前",
     daysAgo: "{count} 天前",
-    title: "Pi Agent Web",
+    title: "Pi-Agent",
     newSessionIn: "在 {cwd} 中新建会话",
     selectProjectFirst: "请先选择项目",
     newSession: "新建",

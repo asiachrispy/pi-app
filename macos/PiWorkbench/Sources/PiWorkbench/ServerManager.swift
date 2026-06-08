@@ -105,7 +105,7 @@ final class ServerManager: ObservableObject {
     }
     let alert = NSAlert()
     alert.messageText = "Pi Workbench"
-    alert.informativeText = "pi-app \(piWebVersion)\n@mariozechner/pi-coding-agent \(piVersion)"
+    alert.informativeText = "pi-app \(piWebVersion)\npi-coding-agent \(piVersion)"
     alert.alertStyle = .informational
     alert.addButton(withTitle: "好")
     alert.runModal()

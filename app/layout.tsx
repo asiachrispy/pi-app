@@ -10,7 +10,7 @@ const notoSansMono = Noto_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pi Agent Web",
+  title: "Pi-Agent",
   description: "Pi Coding Agent Web Interface",
   manifest: "/manifest.webmanifest",
   icons: {
