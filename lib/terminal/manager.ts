@@ -244,3 +244,32 @@ export function resetTerminalManagerForTests(): void {
   cachedManager = null;
   (globalThis as Record<string, unknown>)[REGISTRY_KEY] = new Map();
 }
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __piTerminalCleanupInstalled: boolean | undefined;
+}
+
+/**
+ * Idempotently install SIGTERM / SIGINT / `exit` handlers that kill all
+ * active terminal subprocesses. Safe to call from multiple module loads
+ * (e.g. Next.js HMR); only the first call actually subscribes.
+ */
+export function installTerminalCleanupHandlers(): void {
+  if (globalThis.__piTerminalCleanupInstalled) return;
+  globalThis.__piTerminalCleanupInstalled = true;
+
+  const cleanup = () => {
+    try {
+      getTerminalManager().killAll();
+    } catch {
+      // never let cleanup throw during process exit
+    }
+  };
+  process.once("SIGTERM", cleanup);
+  process.once("SIGINT", cleanup);
+  process.on("exit", cleanup);
+}
+
+// Auto-install on module load. HMR-safe via the globalThis flag.
+installTerminalCleanupHandlers();
