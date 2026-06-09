@@ -115,7 +115,7 @@ export class TerminalManager {
     keepRunning: boolean,
   ): Promise<{ ok: true; pid: number; startedAt: number } | { ok: false; reason: "slot_occupied" }> {
     // Built-in commands that don't spawn a subprocess
-    const builtinResult = await handleBuiltin(session, command, this);
+    const builtinResult = handleBuiltin(session, command, this);
     if (builtinResult) return builtinResult;
 
     // Pre-process: inject --progress for git clone/fetch/push so progress
@@ -268,11 +268,11 @@ export function promptForCwd(cwd: string): string {
   return `${username}@${host} ${dir} %`;
 }
 
-async function handleBuiltin(
+function handleBuiltin(
   session: TerminalSession,
   command: string,
   mgr: TerminalManager,
-): Promise<{ ok: true; pid: number; startedAt: number } | null> {
+): { ok: true; pid: number; startedAt: number } | null {
   const trimmed = command.trim();
   const now = Date.now();
   
