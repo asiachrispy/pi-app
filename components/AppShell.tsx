@@ -632,6 +632,25 @@ export function AppShell() {
               paddingRight={rightPanelOpen ? 12 : 48}
             />
           )}
+          {/* Terminal toggle — inside top bar, right before the file panel toggle */}
+          <button
+            onClick={() => setTerminalOpen((v) => !v)}
+            disabled={!terminalCwd}
+            title={terminalCwd ? (terminalOpen ? "Close terminal" : "Open terminal") : "Open a session first"}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              height: 38, padding: "0 10px", flexShrink: 0,
+              background: "none", border: "none", borderLeft: "1px solid var(--border-strong)",
+              color: terminalOpen ? "var(--text)" : "var(--text-muted)",
+              cursor: terminalCwd ? "pointer" : "not-allowed",
+              font: "inherit", fontSize: 13, fontWeight: 600,
+              opacity: terminalCwd ? 1 : 0.4, transition: "color 0.12s, opacity 0.12s",
+            }}
+            onMouseEnter={(e) => { if (terminalCwd) e.currentTarget.style.color = "var(--text)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = terminalOpen ? "var(--text)" : "var(--text-muted)"; }}
+          >
+            {"\u003E_"}
+          </button>
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
             <div style={{
@@ -783,26 +802,6 @@ export function AppShell() {
         </div>
       </div>
     </div>
-    {/* Terminal toggle — always visible at top-right, left of file panel toggle */}
-    <button
-      onClick={() => setTerminalOpen((v) => !v)}
-      disabled={!terminalCwd}
-      title={terminalCwd ? (terminalOpen ? "Close terminal" : "Open terminal") : "Open a session first"}
-      style={{
-        position: "fixed", top: 0, right: 36, zIndex: 300,
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-        height: 36, padding: "0 8px",
-        background: topBarBackground, border: "none", borderLeft: "1px solid var(--border-strong)", borderBottom: "1px solid var(--border-strong)",
-        color: terminalOpen ? "var(--text)" : "var(--text-muted)",
-        cursor: terminalCwd ? "pointer" : "not-allowed",
-        font: "inherit", fontSize: 12,
-        opacity: terminalCwd ? 1 : 0.4, transition: "color 0.12s, opacity 0.12s",
-      }}
-      onMouseEnter={(e) => { if (terminalCwd) e.currentTarget.style.color = "var(--text)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = terminalOpen ? "var(--text)" : "var(--text-muted)"; }}
-    >
-      {"📟"}
-    </button>
     {/* File panel toggle — always visible at top-right */}
     <button
       onClick={() => setRightPanelOpen((v) => !v)}
