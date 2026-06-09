@@ -625,22 +625,15 @@ export function AppShell() {
               </button>
             </div>
           )}
-          {showChat && (
-            <SessionReportButton
-              sessionStats={sessionStats}
-              contextUsage={contextUsage}
-              paddingRight={rightPanelOpen ? 12 : 48}
-            />
-          )}
-          {/* Terminal toggle — inside top bar, right before the file panel toggle */}
+          {/* Terminal toggle — inside top bar, to the left of usage report */}
           <button
             onClick={() => setTerminalOpen((v) => !v)}
             disabled={!terminalCwd}
             title={terminalCwd ? (terminalOpen ? "Close terminal" : "Open terminal") : "Open a session first"}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
-              height: 38, padding: "0 10px", flexShrink: 0,
-              background: "none", border: "none", borderLeft: "1px solid var(--border-strong)",
+              height: 38, padding: "0 10px", flexShrink: 0, marginLeft: "auto",
+              background: "none", border: "none", borderLeft: "1px solid var(--border)",
               color: terminalOpen ? "var(--text)" : "var(--text-muted)",
               cursor: terminalCwd ? "pointer" : "not-allowed",
               font: "inherit", fontSize: 13, fontWeight: 600,
@@ -651,6 +644,13 @@ export function AppShell() {
           >
             {"\u003E_"}
           </button>
+          {showChat && (
+            <SessionReportButton
+              sessionStats={sessionStats}
+              contextUsage={contextUsage}
+              paddingRight={rightPanelOpen ? 12 : 48}
+            />
+          )}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
             <div style={{
