@@ -2,11 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { getTerminalSettings } from "./settings";
+import { getTerminalSettings, _resetTerminalSettingsCache } from "./settings";
 
 let tmpDir: string;
 
 beforeEach(() => {
+  _resetTerminalSettingsCache();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-term-test-"));
   vi.stubEnv("PI_CODING_AGENT_DIR", tmpDir);
 });
