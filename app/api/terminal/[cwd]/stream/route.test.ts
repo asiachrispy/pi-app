@@ -36,7 +36,7 @@ describe("GET /api/terminal/[cwd]/stream", () => {
     const { NextRequest } = await import("next/server");
     const req = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/stream`);
     const { GET } = await import("./route");
-    const res = await GET(req as unknown as Request, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
+    const res = await GET(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
 
