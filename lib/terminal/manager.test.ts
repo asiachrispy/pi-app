@@ -1,9 +1,26 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   getTerminalManager,
   resetTerminalManagerForTests,
 } from "./manager";
 import { _resetTerminalSettingsCache } from "./settings";
+import type { TerminalLine } from "./types";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
+let tmpCwd: string;
+
+beforeEach(() => {
+  resetTerminalManagerForTests();
+  _resetTerminalSettingsCache();
+  vi.useRealTimers();
+  tmpCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-mgr-"));
+});
+
+afterEach(() => {
+  fs.rmSync(tmpCwd, { recursive: true, force: true });
+});
 
 beforeEach(() => {
   resetTerminalManagerForTests();
@@ -73,14 +90,14 @@ describe("TerminalManager.subscribe + emit", () => {
 describe("TerminalManager.startCommand", () => {
   it("spawns `echo hello` and emits a command line, output line, and exit line", async () => {
     const mgr = getTerminalManager();
-    const s = mgr.getOrCreate("/tmp/proj-spawn-1");
+    const s = mgr.getOrCreate(tmpCwd);
     const events: string[] = [];
     mgr.subscribe(s, (e) => {
       if (e.type === "line") events.push(e.line.kind);
     });
     await mgr.startCommand(s, "echo hello", false);
     // Wait for exit to be processed
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 300));
     expect(events).toContain("command");
     expect(events).toContain("output");
     expect(events).toContain("exit");
@@ -93,19 +110,20 @@ describe("TerminalManager.startCommand", () => {
 
   it("rejects (returns slot-occupied) when a non-keep-running process is still alive", async () => {
     const mgr = getTerminalManager();
-    const s = mgr.getOrCreate("/tmp/proj-spawn-2");
-    await mgr.startCommand(s, "sleep 5", false);
+    const s = mgr.getOrCreate(tmpCwd);
+    await mgr.startCommand(s, "sleep 2", false);
     // immediately try to start another; should be rejected
     const result = await mgr.startCommand(s, "echo second", false);
     expect(result).toEqual({ ok: false, reason: "slot_occupied" });
-    // cleanup
+    // cleanup: kill the sleep, wait for exit
     mgr.stop(s, "user");
+    await new Promise((r) => setTimeout(r, 300));
   });
 
   it("kills the previous keep-running process when a new command is started", async () => {
     const mgr = getTerminalManager();
-    const s = mgr.getOrCreate("/tmp/proj-spawn-3");
-    await mgr.startCommand(s, "sleep 30", true);
+    const s = mgr.getOrCreate(tmpCwd);
+    await mgr.startCommand(s, "sleep 5", true);
     expect(s.runningProcess?.isKeepRunning).toBe(true);
     const oldPid = s.runningProcess!.pid;
     // Start new command without await — startCommand is sync; the new spawn begins immediately
@@ -115,12 +133,14 @@ describe("TerminalManager.startCommand", () => {
     expect(s.runningProcess?.pid).not.toBe(oldPid);
     const info = s.buffer.find((l) => l.kind === "info") as Extract<TerminalLine, { kind: "info" }> | undefined;
     expect(info?.text).toBe("killed by new command");
+    // cleanup
+    await new Promise((r) => setTimeout(r, 300));
   });
 
   it("killed child shows [exit null SIGTERM] in buffer", async () => {
     const mgr = getTerminalManager();
-    const s = mgr.getOrCreate("/tmp/proj-spawn-4");
-    await mgr.startCommand(s, "sleep 30", true);
+    const s = mgr.getOrCreate(tmpCwd);
+    await mgr.startCommand(s, "sleep 5", true);
     mgr.stop(s, "user");
     await new Promise((r) => setTimeout(r, 500));
     const exitLine = s.buffer.find((l) => l.kind === "exit") as Extract<TerminalLine, { kind: "exit" }> | undefined;

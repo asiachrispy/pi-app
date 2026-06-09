@@ -26,6 +26,7 @@ import type {
 } from "./types";
 import { appendLine as ringAppendLine } from "./ring-buffer";
 import { getTerminalSettings } from "./settings";
+import { spawn } from "child_process";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -96,6 +97,103 @@ export class TerminalManager {
   /** Append a line to the session's ring buffer (capped at settings.maxOutputBytes). */
   appendLine(session: TerminalSession, line: TerminalLine): void {
     ringAppendLine(session, line, getTerminalSettings().maxOutputBytes);
+  }
+
+  /**
+   * Spawn a command in the session's cwd. At most one subprocess per
+   * session. Behavior depends on current slot state:
+   *  - empty: spawn immediately
+   *  - non-keep-running alive: return { ok: false, reason: "slot_occupied" }
+   *  - keep-running alive: kill it, append "killed by new command", then spawn
+   */
+  async startCommand(
+    session: TerminalSession,
+    command: string,
+    keepRunning: boolean,
+  ): Promise<{ ok: true; pid: number; startedAt: number } | { ok: false; reason: "slot_occupied" }> {
+    if (session.runningProcess) {
+      if (!session.runningProcess.isKeepRunning) {
+        return { ok: false, reason: "slot_occupied" };
+      }
+      this.stop(session, "new_command");
+    }
+
+    const shell = process.env.SHELL || "/bin/bash";
+    const child = spawn(shell, ["-c", command], {
+      cwd: session.cwd,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: false,
+      windowsHide: true,
+    });
+
+    const pid = child.pid ?? -1;
+    const startedAt = Date.now();
+
+    const cmdLine: TerminalLine = { kind: "command", text: command, ts: startedAt, keepRunning };
+    this.appendLine(session, cmdLine);
+    this.emit(session, { type: "line", line: cmdLine });
+
+    const running: RunningProcess = {
+      pid,
+      command,
+      startedAt,
+      isKeepRunning: keepRunning,
+      timeoutHandle: null,
+      child,
+    };
+
+    if (!keepRunning) {
+      const settings = getTerminalSettings();
+      running.timeoutHandle = setTimeout(() => {
+        if (session.runningProcess !== running) return;
+        try { child.kill("SIGTERM"); } catch {}
+        setTimeout(() => {
+          if (session.runningProcess !== running) return;
+          try { child.kill("SIGKILL"); } catch {}
+        }, 2000);
+        const errLine: TerminalLine = {
+          kind: "error",
+          text: `killed: exceeded default timeout ${settings.defaultTimeoutMs}ms`,
+          ts: Date.now(),
+        };
+        this.appendLine(session, errLine);
+        this.emit(session, { type: "line", line: errLine });
+      }, settings.defaultTimeoutMs);
+    }
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      const line: TerminalLine = { kind: "output", text: chunk.toString("utf8"), ts: Date.now(), stream: "stdout" };
+      this.appendLine(session, line);
+      this.emit(session, { type: "line", line });
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const line: TerminalLine = { kind: "output", text: chunk.toString("utf8"), ts: Date.now(), stream: "stderr" };
+      this.appendLine(session, line);
+      this.emit(session, { type: "line", line });
+    });
+    child.on("error", (err) => {
+      const line: TerminalLine = { kind: "error", text: `spawn failed: ${err.message}`, ts: Date.now() };
+      this.appendLine(session, line);
+      this.emit(session, { type: "line", line });
+    });
+    child.on("exit", (code, signal) => {
+      if (running.timeoutHandle) {
+        clearTimeout(running.timeoutHandle);
+        running.timeoutHandle = null;
+      }
+      if (session.runningProcess === running) {
+        session.runningProcess = null;
+      }
+      const line: TerminalLine = { kind: "exit", code, signal, ts: Date.now() };
+      this.appendLine(session, line);
+      this.emit(session, { type: "line", line });
+      this.emit(session, { type: "state", running: null });
+    });
+
+    session.runningProcess = running;
+    this.emit(session, { type: "state", running: summarize(running) });
+    return { ok: true, pid, startedAt };
   }
 
   /** Test-only: snapshot of all running processes (for shutdown simulation). */
