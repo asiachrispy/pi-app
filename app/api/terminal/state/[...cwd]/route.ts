@@ -1,9 +1,7 @@
-// app/api/terminal/[cwd]/stop/route.ts
+// app/api/terminal/state/[...cwd]/route.ts
 //
-// POST — explicitly kill the current keep-running process. Returns 404
-// when there is no active process, or when the active process is a
-// non-keep-running command (those are time-bounded; explicit stop is
-// not exposed for them in v1).
+// GET — snapshot of the terminal session for a given cwd.
+// Returns the current buffer, command history, and running-process summary.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getTerminalManager } from "@/lib/terminal/manager";
@@ -16,27 +14,30 @@ import path from "path";
 import fs from "fs";
 
 declare global {
-  var __piTerminalStopAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
+  var __piTerminalAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
 }
+
+const ALLOWED_ROOTS_TTL_MS = 5_000;
 
 async function getAllowedRoots(): Promise<Set<string>> {
   const now = Date.now();
-  const cached = globalThis.__piTerminalStopAllowedRootsCache;
+  const cached = globalThis.__piTerminalAllowedRootsCache;
   if (cached && cached.expiresAt > now) return cached.roots;
   const sessions = await listAllSessions();
   const roots = new Set<string>();
   for (const s of sessions) if (s.cwd) roots.add(s.cwd);
   roots.add(getAgentDir());
+  const home = os.homedir();
   try {
-    for (const name of fs.readdirSync(os.homedir())) {
-      if (/^pi-cwd-\d{8}$/.test(name)) roots.add(path.join(os.homedir(), name));
+    for (const name of fs.readdirSync(home)) {
+      if (/^pi-cwd-\d{8}$/.test(name)) roots.add(path.join(home, name));
     }
   } catch {}
-  globalThis.__piTerminalStopAllowedRootsCache = { roots, expiresAt: now + 5_000 };
+  globalThis.__piTerminalAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
   return roots;
 }
 
-export async function POST(
+export async function GET(
   request: NextRequest,
   ctx: { params: Promise<{ cwd: string[] }> },
 ) {
@@ -50,16 +51,17 @@ export async function POST(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const mgr = getTerminalManager();
-  const session = mgr.getOrCreate(cwd);
-  const rp = session.runningProcess;
-  if (!rp) {
-    return NextResponse.json({ error: "no_active_process" }, { status: 404 });
-  }
-  if (!rp.isKeepRunning) {
-    return NextResponse.json({ error: "no_active_process" }, { status: 404 });
-  }
-  const killedPid = rp.pid;
-  mgr.stop(session, "user");
-  return NextResponse.json({ killed: killedPid });
+  const session = getTerminalManager().getOrCreate(cwd);
+  return NextResponse.json({
+    buffer: session.buffer,
+    history: session.history,
+    running: session.runningProcess
+      ? {
+          pid: session.runningProcess.pid,
+          command: session.runningProcess.command,
+          startedAt: session.runningProcess.startedAt,
+          isKeepRunning: session.runningProcess.isKeepRunning,
+        }
+      : null,
+  });
 }

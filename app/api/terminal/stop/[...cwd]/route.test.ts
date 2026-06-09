@@ -25,12 +25,12 @@ beforeEach(() => {
   delete (globalThis as Record<string, unknown>).__piTerminalStopAllowedRootsCache;
 });
 
-describe("POST /api/terminal/[cwd]/stop", () => {
+describe("POST /api/terminal/stop/[...cwd]", () => {
   it("returns 404 when there is no running process", async () => {
     const { NextRequest } = await import("next/server");
     const { POST } = await import("./route");
     getTerminalManager().getOrCreate(tmpCwd);
-    const req = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/stop`, { method: "POST" });
+    const req = new NextRequest(`http://localhost/api/terminal/stop/${encodeURIComponent(tmpCwd)}`, { method: "POST" });
     const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
     expect(res.status).toBe(404);
   });
@@ -40,10 +40,9 @@ describe("POST /api/terminal/[cwd]/stop", () => {
     const { POST } = await import("./route");
     const session = getTerminalManager().getOrCreate(tmpCwd);
     await getTerminalManager().startCommand(session, "sleep 1", false);
-    const req = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/stop`, { method: "POST" });
+    const req = new NextRequest(`http://localhost/api/terminal/stop/${encodeURIComponent(tmpCwd)}`, { method: "POST" });
     const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
     expect(res.status).toBe(404);
-    // cleanup
     try { session.runningProcess?.child.kill("SIGKILL"); } catch { /* ignore */ }
   });
 
@@ -52,12 +51,11 @@ describe("POST /api/terminal/[cwd]/stop", () => {
     const { POST } = await import("./route");
     const session = getTerminalManager().getOrCreate(tmpCwd);
     await getTerminalManager().startCommand(session, "sleep 5", true);
-    const req = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/stop`, { method: "POST" });
+    const req = new NextRequest(`http://localhost/api/terminal/stop/${encodeURIComponent(tmpCwd)}`, { method: "POST" });
     const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.killed).toBeTypeOf("number");
-    // wait for SIGTERM
     await new Promise((r) => setTimeout(r, 500));
     expect(session.runningProcess).toBeNull();
   });

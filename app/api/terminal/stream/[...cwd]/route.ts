@@ -1,4 +1,4 @@
-// app/api/terminal/[cwd]/stream/route.ts
+// app/api/terminal/stream/[...cwd]/route.ts
 //
 // GET — SSE stream. First emits a `replay` event with the current buffer,
 // then live `line` and `state` events. Closing the connection does NOT

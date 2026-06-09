@@ -25,11 +25,11 @@ beforeEach(() => {
   delete (globalThis as Record<string, unknown>).__piTerminalRunAllowedRootsCache;
 });
 
-describe("POST /api/terminal/[cwd]/run", () => {
+describe("POST /api/terminal/run/[...cwd]", () => {
   it("returns 400 when body is missing command", async () => {
     const { NextRequest } = await import("next/server");
     const { POST } = await import("./route");
-    const req = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/run`, {
+    const req = new NextRequest(`http://localhost/api/terminal/run/${encodeURIComponent(tmpCwd)}`, {
       method: "POST",
       body: JSON.stringify({ keepRunning: false }),
       headers: { "content-type": "application/json" },
@@ -41,7 +41,7 @@ describe("POST /api/terminal/[cwd]/run", () => {
   it("returns 202 with pid for a valid command", async () => {
     const { NextRequest } = await import("next/server");
     const { POST } = await import("./route");
-    const req = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/run`, {
+    const req = new NextRequest(`http://localhost/api/terminal/run/${encodeURIComponent(tmpCwd)}`, {
       method: "POST",
       body: JSON.stringify({ command: "echo hi", keepRunning: false }),
       headers: { "content-type": "application/json" },
@@ -51,29 +51,25 @@ describe("POST /api/terminal/[cwd]/run", () => {
     const body = await res.json();
     expect(body.pid).toBeTypeOf("number");
     expect(body.startedAt).toBeTypeOf("number");
-    // cleanup: the spawned process should exit on its own
   });
 
   it("returns 409 when a non-keep-running command is still active", async () => {
     const { NextRequest } = await import("next/server");
     const { POST } = await import("./route");
-    // First request: start a sleep that will block
-    const r1 = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/run`, {
+    const r1 = new NextRequest(`http://localhost/api/terminal/run/${encodeURIComponent(tmpCwd)}`, {
       method: "POST",
       body: JSON.stringify({ command: "sleep 1", keepRunning: false }),
       headers: { "content-type": "application/json" },
     });
     const res1 = await POST(r1 as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
     expect(res1.status).toBe(202);
-    // Second request immediately: should be rejected
-    const r2 = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/run`, {
+    const r2 = new NextRequest(`http://localhost/api/terminal/run/${encodeURIComponent(tmpCwd)}`, {
       method: "POST",
       body: JSON.stringify({ command: "echo second", keepRunning: false }),
       headers: { "content-type": "application/json" },
     });
     const res2 = await POST(r2 as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
     expect(res2.status).toBe(409);
-    // Cleanup: stop the running session
     const { getTerminalManager } = await import("@/lib/terminal/manager");
     const session = getTerminalManager().getOrCreate(tmpCwd);
     if (session.runningProcess) {

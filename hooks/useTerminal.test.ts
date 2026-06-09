@@ -25,7 +25,7 @@ beforeEach(() => {
   (globalThis as Record<string, unknown>).EventSource = MockEventSource;
   globalThis.fetch = vi.fn(async (url: string) => {
     if (typeof url !== "string") return new Response("not found", { status: 404 });
-    if (url.endsWith("/state")) {
+    if (url.includes("/state/")) {
       const session = getTerminalManager().getOrCreate("/tmp/proj-hook");
       return new Response(JSON.stringify({ buffer: session.buffer, history: [], running: null }), {
         status: 200, headers: { "content-type": "application/json" },
@@ -52,7 +52,7 @@ describe("useTerminal", () => {
       expect(MockEventSource.instances.length).toBe(1);
     });
     const fetchCalls = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c: unknown[]) => String(c[0]));
-    expect(fetchCalls.some((u: string) => u.endsWith("/state"))).toBe(true);
+    expect(fetchCalls.some((u: string) => u.includes("/state/"))).toBe(true);
     expect(result.current.running).toBeNull();
     expect(result.current.lines).toEqual([]);
   });

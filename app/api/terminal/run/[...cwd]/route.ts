@@ -1,4 +1,4 @@
-// app/api/terminal/[cwd]/run/route.ts
+// app/api/terminal/run/[...cwd]/route.ts
 //
 // POST — start a new command. The 202 response is sent BEFORE the
 // subprocess is known to have spawned successfully; spawn failures

@@ -1,7 +1,7 @@
 // hooks/useTerminal.ts
 //
 // React hook for one terminal session (one cwd). Owns the EventSource
-// connection to /api/terminal/[cwd]/stream, hydrates from a parallel
+// connection to /api/terminal/stream/[...cwd], hydrates from a parallel
 // /state fetch, and exposes { lines, history, running, submit, stop, clear }
 // to the components that render the panel.
 
@@ -56,7 +56,7 @@ export function useTerminal(cwd: string | null, enabled: boolean): UseTerminalRe
     setError(null);
 
     // 1) Hydrate from /state
-    fetch(`/api/terminal/${encodeCwd(cwd)}/state`)
+    fetch(`/api/terminal/state/${encodeCwd(cwd)}`)
       .then((r) => {
         if (!r.ok) throw new Error(`state ${r.status}`);
         return r.json();
@@ -76,7 +76,7 @@ export function useTerminal(cwd: string | null, enabled: boolean): UseTerminalRe
       });
 
     // 2) Open SSE
-    const es = new EventSource(`/api/terminal/${encodeCwd(cwd)}/stream`);
+    const es = new EventSource(`/api/terminal/stream/${encodeCwd(cwd)}`);
     esRef.current = es;
     es.onmessage = (e) => {
       if (cwdRef.current !== cwd) return;
@@ -105,7 +105,7 @@ export function useTerminal(cwd: string | null, enabled: boolean): UseTerminalRe
   const submit = useCallback(
     async (command: string, keepRunning: boolean) => {
       if (!cwd) return;
-      const res = await fetch(`/api/terminal/${encodeCwd(cwd)}/run`, {
+      const res = await fetch(`/api/terminal/run/${encodeCwd(cwd)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ command, keepRunning }),
@@ -120,7 +120,7 @@ export function useTerminal(cwd: string | null, enabled: boolean): UseTerminalRe
 
   const stop = useCallback(async () => {
     if (!cwd) return;
-    const res = await fetch(`/api/terminal/${encodeCwd(cwd)}/stop`, { method: "POST" });
+    const res = await fetch(`/api/terminal/stop/${encodeCwd(cwd)}`, { method: "POST" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error ?? `stop ${res.status}`);

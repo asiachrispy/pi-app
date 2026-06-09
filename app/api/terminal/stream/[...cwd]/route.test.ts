@@ -22,11 +22,11 @@ beforeEach(() => {
   tmpCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-stream-"));
   testTmpCwd = tmpCwd;
   delete (globalThis as Record<string, unknown>).__piTerminalAllowedRootsCache;
+  delete (globalThis as Record<string, unknown>).__piTerminalStreamAllowedRootsCache;
 });
 
-describe("GET /api/terminal/[cwd]/stream", () => {
+describe("GET /api/terminal/stream/[...cwd]", () => {
   it("sends a replay event with the current buffer", async () => {
-    // Pre-populate the session buffer
     const { getTerminalManager } = await import("@/lib/terminal/manager");
     const mgr = getTerminalManager();
     const s = mgr.getOrCreate(tmpCwd);
@@ -34,13 +34,12 @@ describe("GET /api/terminal/[cwd]/stream", () => {
     s.bufferBytes = 64;
 
     const { NextRequest } = await import("next/server");
-    const req = new NextRequest(`http://localhost/api/terminal/${encodeURIComponent(tmpCwd)}/stream`);
+    const req = new NextRequest(`http://localhost/api/terminal/stream/${encodeURIComponent(tmpCwd)}`);
     const { GET } = await import("./route");
     const res = await GET(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
 
-    // Read the first SSE chunk
     const reader = (res.body as ReadableStream<Uint8Array>).getReader();
     const decoder = new TextDecoder();
     const { value } = await reader.read();
@@ -48,7 +47,6 @@ describe("GET /api/terminal/[cwd]/stream", () => {
     expect(text).toMatch(/event: replay|replay/);
     expect(text).toMatch(/preloaded/);
 
-    // Cancel so the test doesn't hang
     await reader.cancel();
   });
 });
