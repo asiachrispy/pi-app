@@ -33,6 +33,7 @@ async function getAllowedRoots(): Promise<Set<string>> {
       if (/^pi-cwd-\d{8}$/.test(name)) roots.add(path.join(home, name));
     }
   } catch {}
+  roots.add(home);
   globalThis.__piTerminalAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
   return roots;
 }

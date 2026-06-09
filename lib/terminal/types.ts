@@ -26,6 +26,8 @@ export type RunningProcess = {
   /** Set only when isKeepRunning === false; cleared on natural exit or kill. */
   timeoutHandle: ReturnType<typeof setTimeout> | null;
   child: ChildProcess;
+  /** Stderr buffer for line- and carriage-return collapsing (e.g. git progress bars). */
+  stderrBuf: string;
 };
 
 /** Lightweight summary sent to clients over SSE (no ChildProcess handle). */

@@ -118,6 +118,10 @@ export class TerminalManager {
     const builtinResult = await handleBuiltin(session, command, this);
     if (builtinResult) return builtinResult;
 
+    // Pre-process: inject --progress for git clone/fetch/push so progress
+    // bars appear even when stderr is a pipe (not a TTY).
+    command = injectGitProgress(command);
+
     if (session.runningProcess) {
       if (!session.runningProcess.isKeepRunning) {
         return { ok: false, reason: "slot_occupied" };
@@ -128,7 +132,7 @@ export class TerminalManager {
     const shell = process.env.SHELL || "/bin/bash";
     const child = spawn(shell, ["-c", command], {
       cwd: session.currentCwd,
-      env: process.env,
+      env: { ...process.env, TERM: process.env.TERM || "xterm-256color", GIT_PROGRESS_DELAY: "0" },
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
       windowsHide: true,
@@ -148,6 +152,7 @@ export class TerminalManager {
       isKeepRunning: keepRunning,
       timeoutHandle: null,
       child,
+      stderrBuf: "",
     };
 
     if (!keepRunning) {
@@ -175,9 +180,7 @@ export class TerminalManager {
       this.emit(session, { type: "line", line });
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      const line: TerminalLine = { kind: "output", text: chunk.toString("utf8"), ts: Date.now(), stream: "stderr" };
-      this.appendLine(session, line);
-      this.emit(session, { type: "line", line });
+      flushStderr(session, running, chunk.toString("utf8"), this);
     });
     child.on("error", (err) => {
       const line: TerminalLine = { kind: "error", text: `spawn failed: ${err.message}`, ts: Date.now() };
@@ -185,6 +188,8 @@ export class TerminalManager {
       this.emit(session, { type: "line", line });
     });
     child.on("exit", (code, signal) => {
+      // Flush any remaining stderr buffer before marking exit
+      flushStderr(session, running, "\n", this);
       if (running.timeoutHandle) {
         clearTimeout(running.timeoutHandle);
         running.timeoutHandle = null;
@@ -317,6 +322,66 @@ async function handleBuiltin(
   }
 
   return null;
+}
+
+function injectGitProgress(command: string): string {
+  // git clone/fetch/push without --progress won't show progress on pipes.
+  // Auto-inject so users see feedback for long-running operations.
+  if (/^git\s+(clone|fetch|push)\b/.test(command.trim()) && !/\s--progress\b/.test(command)) {
+    const trimmed = command.trim();
+    const firstSpace = trimmed.indexOf(" ");
+    const afterGit = trimmed.slice(firstSpace + 1);
+    const secondSpace = afterGit.indexOf(" ");
+    if (secondSpace > 0) {
+      const subCmd = afterGit.slice(0, secondSpace);
+      const rest = afterGit.slice(secondSpace);
+      return `git ${subCmd} --progress${rest}`;
+    }
+    // git clone/fetch/push with no args — add --progress before any potential args
+    return `git ${afterGit} --progress`;
+  }
+  return command;
+}
+
+function flushStderr(
+  session: TerminalSession,
+  running: RunningProcess,
+  chunk: string,
+  mgr: TerminalManager,
+): void {
+  running.stderrBuf += chunk;
+  // Split complete lines (terminated by \n).
+  const segments = running.stderrBuf.split("\n");
+  running.stderrBuf = segments.pop() ?? "";
+  for (const segment of segments) {
+    // Collapse \r progress bars within this segment: keep only the text after the last \r.
+    const parts = segment.split("\r");
+    const text = parts[parts.length - 1]?.trim() || "";
+    if (!text) continue;
+    const line: TerminalLine = { kind: "output", text: text + "\n", ts: Date.now(), stream: "stderr" };
+    mgr.appendLine(session, line);
+    mgr.emit(session, { type: "line", line });
+  }
+  // Emit the trailing incomplete remainder (git progress lines separated by \r only).
+  const remainder = running.stderrBuf;
+  if (!remainder.trim()) return;
+  const parts = remainder.split("\r");
+  const text = parts[parts.length - 1]?.trim() || "";
+  if (!text) return;
+  // Replace the last stderr progress line in the buffer if it was also a progress line.
+  const buf = session.buffer;
+  const lastLine = buf[buf.length - 1];
+  if (lastLine.kind === "output" && lastLine.stream === "stderr") {
+    if (!lastLine.text.endsWith("\n")) {
+      // Replace: update the existing progress line and re-emit via replay
+      lastLine.text = text;
+      mgr.emit(session, { type: "replay", lines: [...buf] });
+      return;
+    }
+  }
+  const line: TerminalLine = { kind: "output", text, ts: Date.now(), stream: "stderr" };
+  mgr.appendLine(session, line);
+  mgr.emit(session, { type: "line", line });
 }
 
 /**
