@@ -69,3 +69,62 @@ describe("TerminalManager.subscribe + emit", () => {
     expect(received).toEqual(["info"]);
   });
 });
+
+describe("TerminalManager.startCommand", () => {
+  it("spawns `echo hello` and emits a command line, output line, and exit line", async () => {
+    const mgr = getTerminalManager();
+    const s = mgr.getOrCreate("/tmp/proj-spawn-1");
+    const events: string[] = [];
+    mgr.subscribe(s, (e) => {
+      if (e.type === "line") events.push(e.line.kind);
+    });
+    await mgr.startCommand(s, "echo hello", false);
+    // Wait for exit to be processed
+    await new Promise((r) => setTimeout(r, 500));
+    expect(events).toContain("command");
+    expect(events).toContain("output");
+    expect(events).toContain("exit");
+    expect(s.runningProcess).toBeNull();
+    const outLine = s.buffer.find((l) => l.kind === "output") as Extract<TerminalLine, { kind: "output" }> | undefined;
+    expect(outLine?.text).toContain("hello");
+    const exitLine = s.buffer.find((l) => l.kind === "exit") as Extract<TerminalLine, { kind: "exit" }> | undefined;
+    expect(exitLine?.code).toBe(0);
+  });
+
+  it("rejects (returns slot-occupied) when a non-keep-running process is still alive", async () => {
+    const mgr = getTerminalManager();
+    const s = mgr.getOrCreate("/tmp/proj-spawn-2");
+    await mgr.startCommand(s, "sleep 5", false);
+    // immediately try to start another; should be rejected
+    const result = await mgr.startCommand(s, "echo second", false);
+    expect(result).toEqual({ ok: false, reason: "slot_occupied" });
+    // cleanup
+    mgr.stop(s, "user");
+  });
+
+  it("kills the previous keep-running process when a new command is started", async () => {
+    const mgr = getTerminalManager();
+    const s = mgr.getOrCreate("/tmp/proj-spawn-3");
+    await mgr.startCommand(s, "sleep 30", true);
+    expect(s.runningProcess?.isKeepRunning).toBe(true);
+    const oldPid = s.runningProcess!.pid;
+    // Start new command without await — startCommand is sync; the new spawn begins immediately
+    const result = await mgr.startCommand(s, "echo replaced", false);
+    expect(result.ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(s.runningProcess?.pid).not.toBe(oldPid);
+    const info = s.buffer.find((l) => l.kind === "info") as Extract<TerminalLine, { kind: "info" }> | undefined;
+    expect(info?.text).toBe("killed by new command");
+  });
+
+  it("killed child shows [exit null SIGTERM] in buffer", async () => {
+    const mgr = getTerminalManager();
+    const s = mgr.getOrCreate("/tmp/proj-spawn-4");
+    await mgr.startCommand(s, "sleep 30", true);
+    mgr.stop(s, "user");
+    await new Promise((r) => setTimeout(r, 500));
+    const exitLine = s.buffer.find((l) => l.kind === "exit") as Extract<TerminalLine, { kind: "exit" }> | undefined;
+    expect(exitLine).toBeDefined();
+    expect(exitLine?.signal).toBe("SIGTERM");
+  });
+});
