@@ -25,7 +25,8 @@ export type UseTerminalResult = {
 type ServerEvent =
   | { type: "replay"; lines: TerminalLine[] }
   | { type: "line";   line: TerminalLine }
-  | { type: "state";  running: RunningProcessSummary | null };
+  | { type: "state";  running: RunningProcessSummary | null }
+  | { type: "prompt"; text: string };
 
 function encodeCwd(cwd: string): string {
   return encodeURIComponent(cwd);
@@ -92,6 +93,8 @@ export function useTerminal(cwd: string | null, enabled: boolean): UseTerminalRe
         setLines((prev) => [...prev, evt.line]);
       } else if (evt.type === "state") {
         setRunning(evt.running);
+      } else if (evt.type === "prompt") {
+        setPrompt(evt.text);
       }
     };
     es.onerror = () => {

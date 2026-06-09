@@ -4,7 +4,7 @@
 // Returns the current buffer, command history, and running-process summary.
 
 import { NextRequest, NextResponse } from "next/server";
-import { getTerminalManager } from "@/lib/terminal/manager";
+import { getTerminalManager, promptForCwd } from "@/lib/terminal/manager";
 import { requireApiAuth } from "@/lib/api-auth";
 import { isPathAllowed, filePathFromSegments } from "@/lib/file-access";
 import { listAllSessions } from "@/lib/session-reader";
@@ -53,7 +53,7 @@ export async function GET(
 
   const session = getTerminalManager().getOrCreate(cwd);
   return NextResponse.json({
-    prompt: promptForCwd(cwd),
+    prompt: promptForCwd(session.currentCwd),
     buffer: session.buffer,
     history: session.history,
     running: session.runningProcess
@@ -65,11 +65,4 @@ export async function GET(
         }
       : null,
   });
-}
-
-function promptForCwd(cwd: string): string {
-  const username = os.userInfo().username || path.basename(os.homedir()) || "user";
-  const host = os.hostname().split(".")[0] || "localhost";
-  const dir = path.basename(cwd) || cwd;
-  return `${username}@${host} ${dir} %`;
 }

@@ -39,6 +39,8 @@ export type RunningProcessSummary = {
 /** One terminal per cwd. The cwd is the registry key. */
 export type TerminalSession = {
   cwd: string;
+  /** The current working directory for the next command (may differ from key after `cd`). */
+  currentCwd: string;
   buffer: TerminalLine[];
   /** Sum of byte cost of all lines currently in `buffer`. Used to enforce the cap. */
   bufferBytes: number;
@@ -59,7 +61,8 @@ export type TerminalListener = (event: TerminalEvent) => void;
 export type TerminalEvent =
   | { type: "replay"; lines: TerminalLine[] }
   | { type: "line";   line: TerminalLine }
-  | { type: "state";  running: RunningProcessSummary | null };
+  | { type: "state";  running: RunningProcessSummary | null }
+  | { type: "prompt"; text: string };
 
 /** Result of `POST /run` for the 409 case. */
 export type RunError =

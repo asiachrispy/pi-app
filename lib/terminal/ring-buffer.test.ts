@@ -5,6 +5,7 @@ import type { TerminalLine, TerminalSession } from "./types";
 function makeSession(): TerminalSession {
   return {
     cwd: "/tmp",
+    currentCwd: "/tmp",
     buffer: [],
     bufferBytes: 0,
     history: [],

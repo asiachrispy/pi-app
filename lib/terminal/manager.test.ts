@@ -148,3 +148,51 @@ describe("TerminalManager.startCommand", () => {
     expect(exitLine?.signal).toBe("SIGTERM");
   });
 });
+
+describe("TerminalManager built-in commands", () => {
+  it("`cd .` does not change currentCwd", async () => {
+    const mgr = getTerminalManager();
+    const s = mgr.getOrCreate(tmpCwd);
+    const orig = fs.realpathSync(s.currentCwd);
+    await mgr.startCommand(s, "cd .", false);
+    expect(fs.realpathSync(s.currentCwd)).toBe(orig);
+  });
+
+  it("`cd subdir` changes currentCwd to the subdirectory", async () => {
+    const mgr = getTerminalManager();
+    const s = mgr.getOrCreate(tmpCwd);
+    const sub = path.join(tmpCwd, "sub");
+    fs.mkdirSync(sub);
+    await mgr.startCommand(s, "cd sub", false);
+    expect(fs.realpathSync(s.currentCwd)).toBe(fs.realpathSync(sub));
+    // Subsequent command runs in the new cwd
+    await mgr.startCommand(s, "pwd", false);
+    await new Promise((r) => setTimeout(r, 300));
+    const outLines = s.buffer.filter((l) => l.kind === "output") as Extract<TerminalLine, { kind: "output" }>[];
+    const pwdLine = outLines[outLines.length - 1];
+    expect(fs.realpathSync(pwdLine?.text.trim() ?? "")).toBe(fs.realpathSync(sub));
+  });
+
+  it("`cd nonexistent` emits an error line", async () => {
+    const mgr = getTerminalManager();
+    const s = mgr.getOrCreate(tmpCwd);
+    const oldCwd = s.currentCwd;
+    await mgr.startCommand(s, "cd nonexistent-subdir", false);
+    expect(s.currentCwd).toBe(oldCwd);
+    const err = s.buffer.find((l) => l.kind === "error") as Extract<TerminalLine, { kind: "error" }> | undefined;
+    expect(err?.text).toContain("no such file");
+  });
+
+  it("`clear` empties the buffer and emits a replay event", async () => {
+    const mgr = getTerminalManager();
+    const s = mgr.getOrCreate(tmpCwd);
+    // Put something in the buffer first
+    await mgr.startCommand(s, "echo x", false);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(s.buffer.length).toBeGreaterThan(0);
+    // Now clear
+    await mgr.startCommand(s, "clear", false);
+    expect(s.buffer).toEqual([]);
+    expect(s.bufferBytes).toBe(0);
+  });
+});

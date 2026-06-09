@@ -27,6 +27,9 @@ import type {
 import { appendLine as ringAppendLine } from "./ring-buffer";
 import { getTerminalSettings } from "./settings";
 import { spawn } from "child_process";
+import os from "os";
+import path from "path";
+import fs from "fs";
 
 declare global {
   var __piTerminals: Map<string, TerminalSession> | undefined;
@@ -59,6 +62,7 @@ export class TerminalManager {
     if (s) return s;
     s = {
       cwd,
+      currentCwd: cwd,
       buffer: [],
       bufferBytes: 0,
       history: [],
@@ -110,6 +114,10 @@ export class TerminalManager {
     command: string,
     keepRunning: boolean,
   ): Promise<{ ok: true; pid: number; startedAt: number } | { ok: false; reason: "slot_occupied" }> {
+    // Built-in commands that don't spawn a subprocess
+    const builtinResult = await handleBuiltin(session, command, this);
+    if (builtinResult) return builtinResult;
+
     if (session.runningProcess) {
       if (!session.runningProcess.isKeepRunning) {
         return { ok: false, reason: "slot_occupied" };
@@ -119,7 +127,7 @@ export class TerminalManager {
 
     const shell = process.env.SHELL || "/bin/bash";
     const child = spawn(shell, ["-c", command], {
-      cwd: session.cwd,
+      cwd: session.currentCwd,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
@@ -246,6 +254,69 @@ export function resetTerminalManagerForTests(): void {
 
 declare global {
   var __piTerminalCleanupInstalled: boolean | undefined;
+}
+
+export function promptForCwd(cwd: string): string {
+  const username = os.userInfo().username || path.basename(os.homedir()) || "user";
+  const host = os.hostname().split(".")[0] || "localhost";
+  const dir = path.basename(cwd) || cwd;
+  return `${username}@${host} ${dir} %`;
+}
+
+async function handleBuiltin(
+  session: TerminalSession,
+  command: string,
+  mgr: TerminalManager,
+): Promise<{ ok: true; pid: number; startedAt: number } | null> {
+  const trimmed = command.trim();
+  const now = Date.now();
+  
+  // cd [path]
+  if (trimmed === "cd" || trimmed === "cd ~" || trimmed.startsWith("cd ")) {
+    let target = trimmed === "cd" ? os.homedir() : trimmed.slice(3).trim();
+    if (target.startsWith("~")) target = path.join(os.homedir(), target.slice(1));
+    const resolved = path.isAbsolute(target) ? path.resolve(target) : path.resolve(session.currentCwd, target);
+    // cd is a navigation tool. Path existence/permission is the only gate;
+    // the API is already loopback-only with requireApiAuth.
+    try {
+      if (!fs.existsSync(resolved)) {
+        const errLine: TerminalLine = { kind: "error", text: `cd: no such file or directory: ${target}`, ts: now };
+        mgr.appendLine(session, errLine);
+        mgr.emit(session, { type: "line", line: errLine });
+        return { ok: true, pid: -1, startedAt: now };
+      }
+      const stat = fs.statSync(resolved);
+      if (!stat.isDirectory()) {
+        const errLine: TerminalLine = { kind: "error", text: `cd: not a directory: ${target}`, ts: now };
+        mgr.appendLine(session, errLine);
+        mgr.emit(session, { type: "line", line: errLine });
+        return { ok: true, pid: -1, startedAt: now };
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const errLine: TerminalLine = { kind: "error", text: `cd: ${target}: ${msg}`, ts: now };
+      mgr.appendLine(session, errLine);
+      mgr.emit(session, { type: "line", line: errLine });
+      return { ok: true, pid: -1, startedAt: now };
+    }
+    session.currentCwd = resolved;
+    const infoLine: TerminalLine = { kind: "info", text: `cd → ${resolved}`, ts: now };
+    mgr.appendLine(session, infoLine);
+    mgr.emit(session, { type: "line", line: infoLine });
+    mgr.emit(session, { type: "prompt", text: promptForCwd(resolved) });
+    return { ok: true, pid: -1, startedAt: now };
+  }
+
+  // clear
+  if (trimmed === "clear") {
+    session.buffer = [];
+    session.bufferBytes = 0;
+    session.droppedBytesSinceLastTruncate = 0;
+    mgr.emit(session, { type: "replay", lines: [] });
+    return { ok: true, pid: -1, startedAt: now };
+  }
+
+  return null;
 }
 
 /**
