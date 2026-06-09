@@ -59,12 +59,16 @@ describe("appendLine", () => {
   it("emits a truncated info line after >=100KB cumulative drops", () => {
     const s = makeSession(200);
     const big = "x".repeat(80);
-    // Push enough output lines to drop >100KB total
+    // Track truncated lines seen during the loop (subsequent evictions
+    // can remove them — the spec doesn't promise stickiness).
+    const truncationsSeen: number[] = [];
     for (let i = 0; i < 2000; i++) {
       appendLine(s, output(big), 200);
+      if (s.buffer.some((l) => l.kind === "truncated")) {
+        truncationsSeen.push(s.droppedBytesSinceLastTruncate);
+      }
     }
-    const truncated = s.buffer.find((l) => l.kind === "truncated");
-    expect(truncated).toBeDefined();
+    expect(truncationsSeen.length).toBeGreaterThan(0);
   });
 
   it("truncates a single output line in place when it alone exceeds the cap", () => {
