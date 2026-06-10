@@ -14,6 +14,7 @@ import {
 } from "@/lib/slash-commands";
 import { normalizeFilePathRef, type FilePathRef } from "@/lib/message-file-refs";
 import { pickFilePathsNative, stageFilesFromBrowser } from "@/lib/stage-uploaded-files";
+import { TOOL_PRESET_LEVELS, TOOL_PRESET_LEVEL_TO_VALUE, toolPresetValueToLevel } from "@/lib/chat-input-tool-presets";
 import { FileAttachmentChip } from "./FileAttachmentChip";
 
 function displayCompactError(compactError: string | null, t: (key: TranslationKey) => string): string | null {
@@ -81,8 +82,6 @@ export interface ChatInputHandle {
   addFiles: (files: File[]) => void;
 }
 
-const TOOL_PRESETS = ["off", "default", "full"] as const;
-const TOOL_PRESET_MAP: Record<"off" | "default" | "full", "none" | "default" | "full"> = { off: "none", default: "default", full: "full" };
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"] as const;
@@ -1079,7 +1078,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
-                  <span>{Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? t("chatInput.defaultPreset")}</span>
+                  <span>{toolPresetValueToLevel(toolPreset ?? "default") ?? t("chatInput.defaultPreset")}</span>
                 </button>
                 {toolDropdownOpen && (
                   <div style={{
@@ -1088,8 +1087,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
                     overflow: "hidden", minWidth: 120,
                   }}>
-                    {TOOL_PRESETS.map((lvl) => {
-                      const preset = TOOL_PRESET_MAP[lvl];
+                    {TOOL_PRESET_LEVELS.map((lvl) => {
+                      const preset = TOOL_PRESET_LEVEL_TO_VALUE[lvl];
                       const isActive = (toolPreset ?? "default") === preset;
                       const desc = lvl === "off" ? t("chatInput.toolPresetNone") : lvl === "default" ? t("chatInput.toolPresetDefault") : t("chatInput.toolPresetFull");
                       return (
