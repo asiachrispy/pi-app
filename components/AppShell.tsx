@@ -16,6 +16,7 @@ import { RemotePairingHandler } from "./RemotePairingHandler";
 import { RemoteAccessBanner } from "./RemoteAccessBanner";
 import { ServerConnectionBanner } from "./ServerConnectionBanner";
 import { useTheme } from "@/hooks/useTheme";
+import { useTerminalPanel } from "@/hooks/useTerminalPanel";
 import { useI18n } from "@/lib/i18n/provider";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import { SessionReportButton } from "./SessionReportButton";
@@ -52,8 +53,7 @@ export function AppShell() {
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const [terminalHeight, setTerminalHeight] = useState(0.4);
+  const terminal = useTerminalPanel();
   const terminalCwd = useMemo(() => selectedSession?.cwd ?? null, [selectedSession]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -686,20 +686,20 @@ export function AppShell() {
           )}
           {/* Terminal toggle — inside top bar, to the left of usage report */}
           <button
-            onClick={() => setTerminalOpen((v) => !v)}
+            onClick={terminal.toggle}
             disabled={!terminalCwd}
-            title={terminalCwd ? (terminalOpen ? "Close terminal" : "Open terminal") : "Open a session first"}
+            title={terminalCwd ? (terminal.open ? "Close terminal" : "Open terminal") : "Open a session first"}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               height: 38, padding: "0 10px", flexShrink: 0, marginLeft: "auto",
               background: "none", border: "none", borderLeft: "1px solid var(--border)",
-              color: terminalOpen ? "var(--text)" : "#000",
+              color: terminal.open ? "var(--text)" : "#000",
               cursor: terminalCwd ? "pointer" : "not-allowed",
               font: "inherit", fontSize: 13, fontWeight: 700,
               opacity: terminalCwd ? 1 : 0.4, transition: "color 0.12s, opacity 0.12s",
             }}
             onMouseEnter={(e) => { if (terminalCwd) e.currentTarget.style.color = "#000"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = terminalOpen ? "var(--text)" : "#000"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = terminal.open ? "var(--text)" : "#000"; }}
           >
             {"\u003E_"}
           </button>
@@ -814,10 +814,10 @@ export function AppShell() {
           <TerminalPanel
             key={terminalCwd}
             cwd={terminalCwd}
-            open={terminalOpen}
-            height={terminalHeight}
-            onClose={() => setTerminalOpen(false)}
-            onHeightChange={setTerminalHeight}
+            open={terminal.open}
+            height={terminal.height}
+            onClose={terminal.close}
+            onHeightChange={terminal.setHeight}
           />
         )}
       </div>
