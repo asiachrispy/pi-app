@@ -19,6 +19,21 @@ pi-app
 
 启动后打开 [http://localhost:30141](http://localhost:30141)。
 
+**一并提供 `pi` 命令行：**
+
+全局安装 pi-app 时会顺带提供 `pi` 命令（即 pi 编程智能体 CLI，与 pi-app 内置版本一致），无需单独安装：
+
+```bash
+npm install -g pi-app
+pi --help        # 直接使用 pi CLI
+```
+
+行为说明：
+
+- 安装后仅当系统中**尚未存在** `pi` 命令时，才会创建 `pi`（一个转发到 pi-app 内置 CLI 的独立 shim）。
+- 若你已单独安装过 `pi`（如通过 `npm i -g @earendil-works/pi-coding-agent` 或 Homebrew），则**保留你已有的版本，不会覆盖**。
+- 卸载说明：npm **不会**执行卸载钩子（`postuninstall`），因此 `npm uninstall -g pi-app` 后这个 `pi` shim 会残留。它是独立 shim 而非失效软链——此时运行 `pi` 不会报「文件不存在」，而是友好提示你重新安装 pi-app 或删除该文件（提示里会给出确切路径）。如需立即清理，按提示删除该 `pi` 文件即可（不会影响你自行安装的其他 `pi`）。
+
 **可选参数：**
 
 ```bash

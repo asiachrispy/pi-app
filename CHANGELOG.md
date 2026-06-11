@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0] - 2026-06-11
+
+### Added
+- **安装即提供 `pi` CLI**：全局安装 pi-app（`npm i -g pi-app`）时，若系统中尚无 `pi` 命令，自动生成一个独立 shim（转发到内置的 `@earendil-works/pi-coding-agent` CLI）；若已有 `pi` 则保留、不覆盖（避免 npm 全局 bin 冲突 `EEXIST` 导致安装失败）。新增 `bin/pi.js` 与 `scripts/{install-cli,uninstall-cli,cli-link-common}.mjs`，`package.json` 注册 `postinstall` / `postuninstall`。
+
+### Changed
+- **卸载降级**：npm 不执行 `postuninstall`，卸载 pi-app 后 `pi` shim 会残留；因其为独立 shim 而非失效软链，运行 `pi` 会给出友好提示（重装/删除）而非报错。
+
 ## [0.7.0] - 2026-06-07
 
 ### Changed

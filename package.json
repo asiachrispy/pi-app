@@ -1,6 +1,6 @@
 {
   "name": "pi-app",
-  "version": "0.7.6",
+  "version": "0.8.0",
   "description": "Web UI for the pi coding agent",
   "license": "MIT",
   "homepage": "https://github.com/asiachrispy/pi-app",
@@ -16,6 +16,9 @@
   },
   "files": [
     "bin",
+    "scripts/install-cli.mjs",
+    "scripts/uninstall-cli.mjs",
+    "scripts/cli-link-common.mjs",
     ".next",
     "!.next/cache",
     "!.next/dev",
@@ -36,6 +39,8 @@
     "test:m2": "node scripts/m2-preflight.mjs",
     "test:m3": "node scripts/m3-preflight.mjs",
     "test:m4": "node scripts/m4-preflight.mjs",
+    "postinstall": "node scripts/install-cli.mjs",
+    "postuninstall": "node scripts/uninstall-cli.mjs",
     "package:macos": "bash scripts/package-macos-app.sh",
     "tunnel:cloudflare": "bash scripts/tunnel-cloudflared.sh",
     "relay:server": "node --experimental-strip-types scripts/pi-relay-server.ts",
