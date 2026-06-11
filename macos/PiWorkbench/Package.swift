@@ -12,5 +12,12 @@ let package = Package(
       name: "PiWorkbench",
       path: "Sources/PiWorkbench"
     ),
+    // Test target requires Xcode (XCTest not included in CommandLineTools).
+    // Run tests with: swift test --specifier macosx (requires Xcode installed).
+    .testTarget(
+      name: "PiWorkbenchTests",
+      dependencies: ["PiWorkbench"],
+      path: "Tests/PiWorkbenchTests"
+    ),
   ]
 )
