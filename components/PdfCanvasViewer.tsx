@@ -10,6 +10,8 @@ interface Props {
   filePath: string;
   cwd?: string;
   displayLabel?: string;
+  /** Active session id; lets the API allow files the agent referenced outside cwd. */
+  sessionId?: string;
 }
 
 function clearManualChildren(host: HTMLDivElement | null): void {
@@ -19,9 +21,10 @@ function clearManualChildren(host: HTMLDivElement | null): void {
   }
 }
 
-async function fetchPdfBytes(filePath: string): Promise<ArrayBuffer> {
+async function fetchPdfBytes(filePath: string, sessionId?: string): Promise<ArrayBuffer> {
   const encoded = encodeFilePathForApi(filePath);
-  const res = await fetch(`/api/files/${encoded}?type=read`, { credentials: "same-origin" });
+  const query = sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : "";
+  const res = await fetch(`/api/files/${encoded}?type=read${query}`, { credentials: "same-origin" });
   const contentType = res.headers.get("content-type") ?? "";
   if (!res.ok) {
     if (contentType.includes("application/json")) {
@@ -37,7 +40,7 @@ async function fetchPdfBytes(filePath: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
-export function PdfCanvasViewer({ filePath, cwd, displayLabel }: Props) {
+export function PdfCanvasViewer({ filePath, cwd, displayLabel, sessionId }: Props) {
   const { t } = useI18n();
   /** PDF page canvases only — never mount React children here. */
   const pagesRef = useRef<HTMLDivElement>(null);
@@ -63,7 +66,7 @@ export function PdfCanvasViewer({ filePath, cwd, displayLabel }: Props) {
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
-        const data = await fetchPdfBytes(filePath);
+        const data = await fetchPdfBytes(filePath, sessionId);
         if (cancelled) return;
 
         const task = pdfjs.getDocument({ data });
@@ -129,7 +132,7 @@ export function PdfCanvasViewer({ filePath, cwd, displayLabel }: Props) {
       destroyDoc?.();
       clearManualChildren(pagesHost);
     };
-  }, [filePath]);
+  }, [filePath, sessionId]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>

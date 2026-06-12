@@ -30,6 +30,13 @@ interface Props {
   cwd?: string;
   /** Original filename when disk path is a UUID staging name without extension. */
   displayLabel?: string;
+  /** Active session id; lets the API allow files the agent referenced outside cwd. */
+  sessionId?: string;
+}
+
+/** Query suffix that scopes file-API requests to the active session. */
+function sessionQuery(sessionId?: string): string {
+  return sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : "";
 }
 
 interface FileData {
@@ -44,11 +51,11 @@ function getFileExt(filePath: string): string {
   return getFileName(filePath).toLowerCase().split(".").pop() ?? "";
 }
 
-function DownloadLink({ filePath, label = "Download" }: { filePath: string; label?: string }) {
+function DownloadLink({ filePath, label = "Download", sessionId }: { filePath: string; label?: string; sessionId?: string }) {
   const encoded = encodeFilePathForApi(filePath);
   return (
     <a
-      href={`/api/files/${encoded}?type=read`}
+      href={`/api/files/${encoded}?type=read${sessionQuery(sessionId)}`}
       download={getFileName(filePath)}
       style={{
         color: "var(--text-muted)",
@@ -409,7 +416,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
   );
 }
 
-function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
+function ImageViewer({ filePath, cwd, sessionId }: { filePath: string; cwd?: string; sessionId?: string }) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -433,7 +440,7 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
     }
 
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(`/api/files/${encoded}?type=watch${sessionQuery(sessionId)}`);
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -451,10 +458,10 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath]);
+  }, [filePath, sessionId]);
 
   const encoded = encodeFilePathForApi(filePath);
-  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
+  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}${sessionQuery(sessionId)}`;
 
   const formatSizeStr = size != null ? formatSize(size) : null;
 
@@ -544,7 +551,7 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
+function AudioViewer({ filePath, cwd, sessionId }: { filePath: string; cwd?: string; sessionId?: string }) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -568,7 +575,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
     }
 
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(`/api/files/${encoded}?type=watch${sessionQuery(sessionId)}`);
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -588,10 +595,10 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath]);
+  }, [filePath, sessionId]);
 
   const encoded = encodeFilePathForApi(filePath);
-  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
+  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}${sessionQuery(sessionId)}`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -712,7 +719,7 @@ function SystemFileFallbackViewer({ filePath, cwd, displayLabel }: { filePath: s
   );
 }
 
-function DocumentViewer({ filePath, cwd, displayLabel }: { filePath: string; cwd?: string; displayLabel?: string }) {
+function DocumentViewer({ filePath, cwd, displayLabel, sessionId }: { filePath: string; cwd?: string; displayLabel?: string; sessionId?: string }) {
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
   const [size, setSize] = useState<number | null>(null);
@@ -721,7 +728,7 @@ function DocumentViewer({ filePath, cwd, displayLabel }: { filePath: string; cwd
 
   const ext = getFileExt(displayLabel?.trim() || filePath);
   const encoded = encodeFilePathForApi(filePath);
-  const previewUrl = `/api/files/${encoded}?type=preview${bust ? `&v=${bust}` : ""}`;
+  const previewUrl = `/api/files/${encoded}?type=preview${bust ? `&v=${bust}` : ""}${sessionQuery(sessionId)}`;
   const title = displayLabel?.trim() || displayNameFromFilePath(filePath) || getRelativeFilePath(filePath, cwd);
 
   useEffect(() => {
@@ -735,7 +742,7 @@ function DocumentViewer({ filePath, cwd, displayLabel }: { filePath: string; cwd
       esRef.current = null;
     }
 
-    fetch(`/api/files/${encoded}?type=meta`)
+    fetch(`/api/files/${encoded}?type=meta${sessionQuery(sessionId)}`)
       .then((r) => r.json())
       .then((d: { size?: number; error?: string }) => {
         if (d.error) setError(d.error);
@@ -748,7 +755,7 @@ function DocumentViewer({ filePath, cwd, displayLabel }: { filePath: string; cwd
       })
       .catch((e) => setError(String(e)));
 
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(`/api/files/${encoded}?type=watch${sessionQuery(sessionId)}`);
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -773,7 +780,7 @@ function DocumentViewer({ filePath, cwd, displayLabel }: { filePath: string; cwd
       es.close();
       esRef.current = null;
     };
-  }, [encoded]);
+  }, [encoded, sessionId]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -792,7 +799,7 @@ function DocumentViewer({ filePath, cwd, displayLabel }: { filePath: string; cwd
         }}
       >
         {size != null && <span>{formatSize(size)}</span>}
-        <DownloadLink filePath={filePath} />
+        <DownloadLink filePath={filePath} sessionId={sessionId} />
         <span
           title={watching ? "Live sync active" : "Not watching"}
           style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)", flexShrink: 0 }}
@@ -829,27 +836,27 @@ function DocumentViewer({ filePath, cwd, displayLabel }: { filePath: string; cwd
   );
 }
 
-export function FileViewer({ filePath, cwd, displayLabel }: Props) {
+export function FileViewer({ filePath, cwd, displayLabel, sessionId }: Props) {
   const ext = getFileExt(displayLabel?.trim() || filePath);
   if (ext === "docx") {
-    return <DocumentViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} />;
+    return <DocumentViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} sessionId={sessionId} />;
   }
 
   const kind = resolveFilePreviewKind(filePath, displayLabel);
   switch (kind) {
     case "image":
-      return <ImageViewer filePath={filePath} cwd={cwd} />;
+      return <ImageViewer filePath={filePath} cwd={cwd} sessionId={sessionId} />;
     case "audio":
-      return <AudioViewer filePath={filePath} cwd={cwd} />;
+      return <AudioViewer filePath={filePath} cwd={cwd} sessionId={sessionId} />;
     case "pdf":
-      return <PdfCanvasViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} />;
+      return <PdfCanvasViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} sessionId={sessionId} />;
     case "system":
       return <SystemFileFallbackViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} />;
     default:
-      return <TextFileViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} />;
+      return <TextFileViewer filePath={filePath} cwd={cwd} displayLabel={displayLabel} sessionId={sessionId} />;
   }
 }
-function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
+function TextFileViewer({ filePath, cwd, displayLabel, sessionId }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
@@ -867,7 +874,7 @@ function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
 
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
     const encoded = encodeFilePathForApi(filePath);
-    return fetch(`/api/files/${encoded}?type=read`)
+    return fetch(`/api/files/${encoded}?type=read${sessionQuery(sessionId)}`)
       .then((r) => r.json())
       .then((d: FileData & { error?: string }) => {
         if (d.error) {
@@ -889,7 +896,7 @@ function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
         setError(String(e));
         return null;
       });
-  }, []);
+  }, [sessionId]);
 
   // Initial load + SSE watch setup
   useEffect(() => {
@@ -914,7 +921,7 @@ function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
 
     // Set up SSE watch
     const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(`/api/files/${encoded}?type=watch${sessionQuery(sessionId)}`);
     esRef.current = es;
 
     es.addEventListener("connected", () => {
@@ -937,7 +944,7 @@ function TextFileViewer({ filePath, cwd, displayLabel }: Props) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath, fetchContent]);
+  }, [filePath, fetchContent, sessionId]);
 
   if (loading) {
     return (

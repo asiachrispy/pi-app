@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import fs, { readdirSync } from "fs";
 import os from "os";
 import path from "path";
-import { listAllSessions } from "@/lib/session-reader";
-import { filePathFromSegments, isPathAllowed, isRealPathAllowed, parseByteRange } from "@/lib/file-access";
+import { collectSessionReferencedFiles, listAllSessions } from "@/lib/session-reader";
+import { filePathFromSegments, isPathAllowed, isRealPathAllowed, isReferencedFileAllowed, parseByteRange } from "@/lib/file-access";
 import { getAgentDir } from "@/lib/agent-dir";
 import { requireApiAuth } from "@/lib/api-auth";
 
@@ -309,7 +309,15 @@ export async function GET(
     const type = request.nextUrl.searchParams.get("type") ?? "list";
 
     const allowedRoots = await getAllowedRoots();
-    if (!isPathAllowed(filePath, allowedRoots)) {
+    // Files the agent referenced in the active session are allowed even when they
+    // live outside the cwd-derived roots. Resolved lazily so the common in-root
+    // case never scans the transcript.
+    const sessionId = request.nextUrl.searchParams.get("sessionId");
+    let referencedFiles: Set<string> | null = null;
+    const referenced = async (): Promise<Set<string>> =>
+      (referencedFiles ??= sessionId ? await collectSessionReferencedFiles(sessionId) : new Set<string>());
+
+    if (!isPathAllowed(filePath, allowedRoots) && !isReferencedFileAllowed(filePath, await referenced())) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
@@ -319,7 +327,7 @@ export async function GET(
     } catch {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (!isRealPathAllowed(filePath, allowedRoots)) {
+    if (!isRealPathAllowed(filePath, allowedRoots) && !isReferencedFileAllowed(filePath, await referenced())) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 

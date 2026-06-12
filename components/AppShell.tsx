@@ -852,6 +852,7 @@ export function AppShell() {
               filePath={activeFileTab.filePath}
               displayLabel={activeFileTab.label}
               cwd={activeCwd ?? undefined}
+              sessionId={selectedSession?.id}
             />
           ) : (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
