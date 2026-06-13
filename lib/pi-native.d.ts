@@ -35,6 +35,19 @@ interface PiNativeBridge {
    * indicators in the settings panel.
    */
   getPowerState?: () => Promise<{ isHeld: boolean; mode: "none" | "autoTask" | "alwaysOn" }>;
+  /**
+   * macOS Pi.app only — copy a rendered preview image to the system
+   * pasteboard so the user can paste it into any native app. `dataUrl`
+   * is a `data:image/png;base64,...` string. Resolves once the image
+   * is on the pasteboard; rejects on decode failure.
+   */
+  copyImage?: (dataUrl: string) => Promise<void>;
+  /**
+   * macOS Pi.app only — show an NSSavePanel and write the rendered preview
+   * image to the chosen location. `dataUrl` is a `data:image/png;base64,...`
+   * string. Resolves once the file is written (or the user cancels).
+   */
+  saveImage?: (dataUrl: string, fileName: string) => Promise<void>;
 }
 
 interface Window {

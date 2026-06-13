@@ -18,6 +18,8 @@ final class PiNativeBridgeTests: XCTestCase {
       "allowSleep",
       "setKeepAwakeAlways",
       "getPowerState",
+      "copyImage",
+      "saveImage",
     ]
     for method in expected {
       XCTAssertTrue(script.contains(method), "injectionScript should expose \(method)")

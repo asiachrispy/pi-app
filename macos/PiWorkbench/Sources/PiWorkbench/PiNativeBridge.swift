@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import UserNotifications
 import WebKit
 
@@ -36,6 +37,8 @@ final class PiNativeBridge: NSObject, WKScriptMessageHandler {
       allowSleep: () => call("allowSleep"),
       setKeepAwakeAlways: (enabled) => call("setKeepAwakeAlways", { enabled: !!enabled }),
       getPowerState: () => call("getPowerState"),
+      copyImage: (dataUrl) => call("copyImage", { dataUrl }),
+      saveImage: (dataUrl, fileName) => call("saveImage", { dataUrl, fileName }),
     };
   })();
   """
@@ -97,6 +100,19 @@ final class PiNativeBridge: NSObject, WKScriptMessageHandler {
         "isHeld": mgr.isHeld,
         "mode": mgr.mode == .autoTask ? "autoTask" : (mgr.mode == .alwaysOn ? "alwaysOn" : "none"),
       ]
+    case "copyImage":
+      guard let dataUrl = args["dataUrl"] as? String else {
+        throw NSError(domain: "piNative", code: 1, userInfo: [NSLocalizedDescriptionKey: "copyImage requires dataUrl"])
+      }
+      try copyImageToPasteboard(dataUrl: dataUrl)
+      return nil
+    case "saveImage":
+      guard let dataUrl = args["dataUrl"] as? String else {
+        throw NSError(domain: "piNative", code: 1, userInfo: [NSLocalizedDescriptionKey: "saveImage requires dataUrl"])
+      }
+      let suggestedName = (args["fileName"] as? String) ?? "preview.png"
+      try await saveImageWithPanel(dataUrl: dataUrl, suggestedName: suggestedName)
+      return nil
     default:
       throw NSError(domain: "piNative", code: 0, userInfo: [NSLocalizedDescriptionKey: "Unknown method \(method)"])
     }
@@ -159,6 +175,58 @@ final class PiNativeBridge: NSObject, WKScriptMessageHandler {
     content.userInfo = ["sessionId": sessionId]
     let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
     UNUserNotificationCenter.current().add(request)
+  }
+
+  /// Decodes a `data:image/...;base64,...` URL into an NSImage.
+  private func decodeDataUrl(_ dataUrl: String) throws -> NSImage {
+    guard let commaIndex = dataUrl.firstIndex(of: ",") else {
+      throw NSError(domain: "piNative", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid data URL"])
+    }
+    let header = String(dataUrl[..<commaIndex])
+    let payload = String(dataUrl[dataUrl.index(after: commaIndex)...])
+    guard header.contains(";base64") else {
+      throw NSError(domain: "piNative", code: 2, userInfo: [NSLocalizedDescriptionKey: "Only base64 data URLs are supported"])
+    }
+    guard let data = Data(base64Encoded: payload) else {
+      throw NSError(domain: "piNative", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to decode base64 payload"])
+    }
+    guard let image = NSImage(data: data) else {
+      throw NSError(domain: "piNative", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to decode image data"])
+    }
+    return image
+  }
+
+  /// Copies the image (decoded from a base64 data URL) into the macOS
+  /// pasteboard so the user can paste it into any native app.
+  private func copyImageToPasteboard(dataUrl: String) throws {
+    let image = try decodeDataUrl(dataUrl)
+    let pb = NSPasteboard.general
+    pb.clearContents()
+    pb.writeObjects([image])
+  }
+
+  /// Shows an NSSavePanel and writes the decoded image to the chosen path.
+  private func saveImageWithPanel(dataUrl: String, suggestedName: String) async throws {
+    let image = try decodeDataUrl(dataUrl)
+    let url: URL? = await withCheckedContinuation { continuation in
+      let panel = NSSavePanel()
+      panel.nameFieldStringValue = suggestedName
+      panel.allowedContentTypes = [.png]
+      panel.canCreateDirectories = true
+      panel.title = "保存图片"
+      panel.message = "选择保存位置"
+      panel.begin { response in
+        continuation.resume(returning: response == .OK ? panel.url : nil)
+      }
+    }
+    guard let url else { return }
+    guard let tiff = image.tiffRepresentation,
+          let rep = NSBitmapImageRep(data: tiff),
+          let pngData = rep.representation(using: .png, properties: [:])
+    else {
+      throw NSError(domain: "piNative", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode PNG"])
+    }
+    try pngData.write(to: url, options: .atomic)
   }
 
   private func resolve(id: Int, result: Any?, error: String?) {

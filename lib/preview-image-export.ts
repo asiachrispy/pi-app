@@ -140,3 +140,51 @@ export function downloadPngBlob(blob: Blob, fileName: string): void {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+/** Convert a Blob to a `data:image/png;base64,...` string. Used to ferry
+ *  image payloads across the WKWebView bridge — clipboard.write of
+ *  ClipboardItem and `<a download>` are both unreliable inside WKWebView
+ *  without a native shim, so we hand the bytes to Pi.app over
+ *  `window.piNative` and let the host copy/save them via AppKit. */
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("FileReader returned non-string result"));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Copy a preview PNG to the user's clipboard. Tries the native
+ *  Pi.app bridge first (so copy works in WKWebView), then falls back to
+ *  the standard Clipboard API in the browser, and finally to a download. */
+export async function copyPreviewPng(blob: Blob, fallbackFileName: string): Promise<void> {
+  const nativeCopy = window.piNative?.copyImage;
+  if (nativeCopy) {
+    const dataUrl = await blobToDataUrl(blob);
+    await nativeCopy(dataUrl);
+    return;
+  }
+  try {
+    await copyPngBlobToClipboard(blob);
+  } catch {
+    downloadPngBlob(blob, fallbackFileName);
+  }
+}
+
+/** Save a preview PNG to disk. Tries the native Pi.app bridge first
+ *  (so save shows a native NSSavePanel in WKWebView), then falls back to
+ *  a `<a download>` click. Resolves when the file is written or the
+ *  user cancels the save panel / download. */
+export async function savePreviewPng(blob: Blob, fileName: string): Promise<void> {
+  const nativeSave = window.piNative?.saveImage;
+  if (nativeSave) {
+    const dataUrl = await blobToDataUrl(blob);
+    await nativeSave(dataUrl, fileName);
+    return;
+  }
+  downloadPngBlob(blob, fileName);
+}

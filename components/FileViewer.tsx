@@ -17,10 +17,11 @@ import {
 import { displayNameFromFilePath } from "@/lib/message-file-refs";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import {
-  copyPngBlobToClipboard,
+  copyPreviewPng,
   downloadPngBlob,
   makePreviewImageFileName,
   renderElementToPngBlob,
+  savePreviewPng,
 } from "@/lib/preview-image-export";
 import { FilePreviewHeader } from "./FilePreviewHeader";
 import { PdfCanvasViewer } from "./PdfCanvasViewer";
@@ -113,7 +114,7 @@ function PreviewImageActions({
     exportBlob()
       .then(async (blob) => {
         try {
-          await copyPngBlobToClipboard(blob);
+          await copyPreviewPng(blob, makePreviewImageFileName(filePath));
           setStatus("copied");
         } catch {
           downloadPngBlob(blob, makePreviewImageFileName(filePath));
@@ -129,9 +130,14 @@ function PreviewImageActions({
     setBusy("save");
     setStatus(null);
     exportBlob()
-      .then((blob) => {
-        downloadPngBlob(blob, makePreviewImageFileName(filePath));
-        setStatus("saved");
+      .then(async (blob) => {
+        try {
+          await savePreviewPng(blob, makePreviewImageFileName(filePath));
+          setStatus("saved");
+        } catch {
+          downloadPngBlob(blob, makePreviewImageFileName(filePath));
+          setStatus("fallbackSaved");
+        }
         setTimeout(() => setStatus(null), 1500);
       })
       .catch(() => setStatus("error"))
@@ -1207,7 +1213,7 @@ function TextFileViewer({ filePath, cwd, displayLabel, sessionId }: Props) {
           <div
             ref={markdownPreviewRef}
             className="markdown-body markdown-file-preview"
-            style={{ padding: "24px 32px", maxWidth: 800 }}
+            style={{ padding: "24px 32px", maxWidth: 800, color: "var(--text)" }}
           >
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.content}</ReactMarkdown>
           </div>

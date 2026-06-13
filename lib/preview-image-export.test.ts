@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { calculatePreviewImageExportSize, makePreviewImageFileName } from "./preview-image-export";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import {
+  calculatePreviewImageExportSize,
+  copyPreviewPng,
+  makePreviewImageFileName,
+  savePreviewPng,
+} from "./preview-image-export";
 
 describe("makePreviewImageFileName", () => {
   it("uses the preview file basename with a png extension", () => {
@@ -41,5 +46,49 @@ describe("calculatePreviewImageExportSize", () => {
       outputWidth: 1,
       outputHeight: 1,
     });
+  });
+});
+
+// @vitest-environment jsdom
+describe("copyPreviewPng / savePreviewPng", () => {
+  // The piNative bridge is window-scoped, so we mock the global directly
+  // and restore it after each test. We do not need a DOM because
+  // copyPreviewPng / savePreviewPng short-circuit to piNative before
+  // touching navigator.clipboard in the happy-path tests below.
+  const w = globalThis as unknown as { window?: { piNative?: unknown } };
+  const originalWindow = w.window;
+
+  beforeEach(() => {
+    w.window = { piNative: undefined };
+  });
+
+  afterEach(() => {
+    w.window = originalWindow;
+  });
+
+  it("uses the piNative bridge when present (copy)", async () => {
+    const copyImage = vi.fn().mockResolvedValue(undefined);
+    if (w.window) w.window.piNative = { copyImage };
+
+    const blob = new Blob(["fake-png"], { type: "image/png" });
+    await copyPreviewPng(blob, "report.png");
+
+    expect(copyImage).toHaveBeenCalledTimes(1);
+    const arg = copyImage.mock.calls[0]?.[0];
+    expect(typeof arg).toBe("string");
+    expect(arg).toMatch(/^data:image\/png;base64,/);
+  });
+
+  it("uses the piNative bridge when present (save)", async () => {
+    const saveImage = vi.fn().mockResolvedValue(undefined);
+    if (w.window) w.window.piNative = { saveImage };
+
+    const blob = new Blob(["fake-png"], { type: "image/png" });
+    await savePreviewPng(blob, "report.png");
+
+    expect(saveImage).toHaveBeenCalledTimes(1);
+    const [dataUrl, fileName] = saveImage.mock.calls[0] ?? [];
+    expect(dataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(fileName).toBe("report.png");
   });
 });
