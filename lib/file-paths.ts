@@ -5,6 +5,13 @@ export function normalizeFilePathSlashes(filePath: string): string {
   return filePath;
 }
 
+export function isAbsoluteFilePath(filePath: string): boolean {
+  return filePath.startsWith("/")
+    || /^[a-zA-Z]:[\\/]/.test(filePath)
+    || filePath.startsWith("\\\\")
+    || filePath.startsWith("//");
+}
+
 export function encodeFilePathForApi(filePath: string): string {
   return normalizeFilePathSlashes(filePath)
     .split("/")
@@ -31,4 +38,10 @@ export function getRelativeFilePath(filePath: string, cwd?: string): string {
 
 export function joinFilePath(parent: string, child: string): string {
   return `${normalizeFilePathSlashes(parent).replace(/\/$/, "")}/${child}`;
+}
+
+export function resolveFilePathForOpen(filePath: string, cwd?: string | null): string {
+  const normalized = normalizeFilePathSlashes(filePath.trim());
+  if (!normalized || isAbsoluteFilePath(normalized) || !cwd) return normalized;
+  return joinFilePath(cwd, normalized.replace(/^\.\//, ""));
 }

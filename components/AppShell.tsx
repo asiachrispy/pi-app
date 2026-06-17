@@ -30,6 +30,7 @@ import {
   openFileWithSystemApp,
   resolveFilePreviewKind,
 } from "@/lib/file-preview";
+import { resolveFilePathForOpen } from "@/lib/file-paths";
 import { cachePiWebPreferences } from "@/lib/pi-web-preferences-cache";
 import {
   usePanelResize,
@@ -428,18 +429,20 @@ export function AppShell() {
   }, [resetChatChrome, router]);
 
   const handleOpenFile = useCallback((filePath: string, fileName: string) => {
-    const kind = resolveFilePreviewKind(filePath, fileName);
+    const baseCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd ?? null;
+    const resolvedFilePath = resolveFilePathForOpen(filePath, baseCwd);
+    const kind = resolveFilePreviewKind(resolvedFilePath, fileName);
     if (!canPreviewInApp(kind) && canOpenWithSystemApp()) {
-      void openFileWithSystemApp(filePath);
+      void openFileWithSystemApp(resolvedFilePath);
     }
-    const tabId = `file:${filePath}`;
+    const tabId = `file:${resolvedFilePath}`;
     setFileTabs((prev) => {
       if (prev.find((t) => t.id === tabId)) return prev;
-      return [...prev, { id: tabId, label: fileName, filePath }];
+      return [...prev, { id: tabId, label: fileName, filePath: resolvedFilePath }];
     });
     setActiveFileTabId(tabId);
     setRightPanelOpen(true);
-  }, []);
+  }, [activeCwd, newSessionCwd, selectedSession?.cwd]);
 
   const handleCloseFileTab = useCallback((tabId: string) => {
     setFileTabs((prev) => {
