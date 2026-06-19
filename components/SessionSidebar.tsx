@@ -919,7 +919,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           {explorerOpen && (
             <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
               <FileExplorer
-                cwd={selectedCwdProp ?? selectedCwd!}
+                cwd={selectedCwd ?? selectedCwdProp!}
                 onOpenFile={onOpenFile ?? (() => {})}
                 refreshKey={explorerKey}
                 onAtMention={onAtMention}
