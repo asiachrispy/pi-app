@@ -6,6 +6,8 @@ import { collectSessionReferencedFiles, listAllSessions } from "@/lib/session-re
 import { filePathFromSegments, isPathAllowed, isRealPathAllowed, isReferencedFileAllowed, parseByteRange } from "@/lib/file-access";
 import { getAgentDir } from "@/lib/agent-dir";
 import { requireApiAuth } from "@/lib/api-auth";
+import { loadPiWebPreferences } from "@/lib/pi-web-preferences";
+import { getCachedAllowedRoots, setCachedAllowedRoots } from "@/lib/allowed-roots-cache";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -91,20 +93,16 @@ function getLanguage(filePath: string): string {
   return EXT_TO_LANGUAGE[ext] ?? "text";
 }
 
-// Short-TTL cache for the allowed-roots set. Without this, every file list/read
-// request re-scans every pi session on disk just to check access. 5s is short
-// enough that newly-created cwds appear promptly; stored on globalThis so it
-// survives Next.js hot-reload.
-declare global {
-  var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
+function expandHomePath(p: string, home: string): string {
+  if (p === "~") return home;
+  if (p.startsWith("~/") || p.startsWith("~\\")) return path.join(home, p.slice(2));
+  return p;
 }
-
-const ALLOWED_ROOTS_TTL_MS = 5_000;
 
 async function getAllowedRoots(): Promise<Set<string>> {
   const now = Date.now();
-  const cached = globalThis.__piAllowedRootsCache;
-  if (cached && cached.expiresAt > now) return cached.roots;
+  const cached = getCachedAllowedRoots(now);
+  if (cached) return cached;
 
   const sessions = await listAllSessions();
   const roots = new Set<string>();
@@ -112,8 +110,20 @@ async function getAllowedRoots(): Promise<Set<string>> {
     if (s.cwd) roots.add(s.cwd);
   }
   roots.add(getAgentDir());
-  // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint
+
   const home = os.homedir();
+  // Allow workspaces the user explicitly opened — the configured default and any
+  // recently opened directory — even before they have a saved session on disk.
+  // Without this, selecting such a project shows an empty file explorer until
+  // the first message is sent (when the cwd first lands in a session file and
+  // therefore in the allowed roots).
+  const prefs = loadPiWebPreferences();
+  for (const raw of [prefs.defaultWorkspaceCwd, ...(prefs.recentWorkspaceCwds ?? [])]) {
+    const trimmed = raw?.trim();
+    if (trimmed) roots.add(expandHomePath(trimmed, home));
+  }
+
+  // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint
   try {
     for (const name of readdirSync(home)) {
       if (/^pi-cwd-\d{8}$/.test(name)) {
@@ -124,7 +134,7 @@ async function getAllowedRoots(): Promise<Set<string>> {
     // ignore if home is unreadable
   }
 
-  globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
+  setCachedAllowedRoots(roots, now);
   return roots;
 }
 

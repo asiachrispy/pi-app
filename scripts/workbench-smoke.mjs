@@ -43,7 +43,7 @@ async function expectVisible(locator, label) {
 
 try {
   await page.goto(baseURL, { waitUntil: "networkidle" });
-  await expectVisible(page.getByText("Enterprise Workbench"), "home workbench label visible");
+  await expectVisible(page.getByText(/Pi Workbench|Pi 工作台/), "home workbench label visible");
   await expectVisible(page.getByRole("button", { name: /New conversation|新建对话/ }), "new chat button visible");
   await expectVisible(page.getByText(/My Work|我的工作/), "recent work heading visible");
 
