@@ -37,8 +37,27 @@ function sanitizePatch(body: unknown): Partial<PiWebPreferences> {
       .filter((entry): entry is string => typeof entry === "string")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
-    if (cleaned.length > 0) {
-      patch.excludedProjectCwds = Array.from(new Set(cleaned));
+    // Explicit empty array → clear all exclusions (restore last project).
+    if (cleaned.length === 0) {
+      const current = loadPiWebPreferences().excludedProjectCwds;
+      if (current && current.length > 0) patch.excludedProjectCwds = [];
+    } else {
+      // Merge with existing excluded cwds (union) to prevent a TOCTOU race
+      // when the user hides several projects in rapid succession. Each click
+      // is a separate PUT; without the union the second PUT would overwrite
+      // the first, keeping only the last excluded cwd.
+      //
+      // Full replacement is still used when the incoming list is a subset of
+      // the current (Settings → restore button sent the final list to keep).
+      const current = loadPiWebPreferences().excludedProjectCwds ?? [];
+      const incoming = new Set(cleaned);
+      const allCurrentRemoved = current.every((c) => !incoming.has(c));
+      if (allCurrentRemoved && cleaned.length < current.length) {
+        // Client sent a subset — treat as replace (restore action).
+        patch.excludedProjectCwds = Array.from(incoming);
+      } else {
+        patch.excludedProjectCwds = Array.from(new Set([...current, ...cleaned]));
+      }
     }
   }
 
