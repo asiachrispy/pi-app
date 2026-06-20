@@ -2,11 +2,8 @@ import { NextResponse } from "next/server";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { requireApiAuth } from "@/lib/api-auth";
 import {
-  addExcludedProjectCwd,
   loadPiWebPreferences,
   mergePiWebPreferences,
-  removeExcludedProjectCwd,
-  savePiWebPreferences,
   type PiWebPreferences,
   type ToolMode,
 } from "@/lib/pi-web-preferences";
@@ -35,8 +32,6 @@ function sanitizePatch(body: unknown): Partial<PiWebPreferences> {
   if (typeof input.keepAwakeAlways === "boolean") {
     patch.keepAwakeAlways = input.keepAwakeAlways;
   }
-  // excludedProjectCwds is handled inside the PUT handler to keep
-  // read-modify-write in a single call chain — see PUT below.
 
   return patch;
 }
@@ -53,57 +48,8 @@ export async function PUT(req: Request) {
 
   try {
     const body = await req.json();
-
-    // Pull excludedProjectCwds out of the body BEFORE sanitizePatch +
-    // mergePiWebPreferences so we can handle it atomically. Otherwise
-    // two concurrent PUTs would both read stale state and the second
-    // would overwrite the first.
-    const rawExcluded = body.excludedProjectCwds as unknown;
-    delete (body as Record<string, unknown>).excludedProjectCwds;
-
-    // Process all other preference fields normally.
-    let preferences = mergePiWebPreferences(sanitizePatch(body));
-
-    // Handle excludedProjectCwds. Always union (add) to prevent TOCTOU.
-    // Restore from Settings uses DELETE (see below) to remove individual
-    // cwds from the exclusion list.
-    if (Array.isArray(rawExcluded)) {
-      const cleaned = (rawExcluded as unknown[])
-        .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-
-      if (cleaned.length === 0) {
-        // Explicit empty array — clear all excluded cwds.
-        if ((preferences.excludedProjectCwds?.length ?? 0) > 0) {
-          preferences = savePiWebPreferences({ ...preferences, excludedProjectCwds: [] });
-        }
-      } else {
-        // Union: each cwd gets its own atomic read-append-write call.
-        for (const cwd of cleaned) {
-          preferences = addExcludedProjectCwd(cwd);
-        }
-      }
-    }
-
+    const preferences = mergePiWebPreferences(sanitizePatch(body));
     return NextResponse.json({ ok: true, preferences });
-  } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
-  }
-}
-
-/** Remove a single cwd from excludedProjectCwds — used by Settings restore. */
-export async function DELETE(req: Request) {
-  const rejected = rejectUnsafeMutation(req);
-  if (rejected) return rejected;
-
-  try {
-    const url = new URL(req.url);
-    const cwd = url.searchParams.get("rmExcluded");
-    if (cwd && cwd.trim()) {
-      removeExcludedProjectCwd(cwd.trim());
-    }
-    return NextResponse.json({ ok: true, preferences: loadPiWebPreferences() });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

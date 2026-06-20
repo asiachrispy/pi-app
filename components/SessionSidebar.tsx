@@ -7,15 +7,13 @@ import { getPickerCwds, pickMostRecentSession } from "@/lib/session-projects";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 
-/** Persist a project removal to the preferences API. The server always
- *  merges (union) incoming excludedProjectCwds with the existing list, so
- *  we can simply send [cwd] without a read-then-append round-trip. On
- *  error we still let the caller optimistically drop the cwd locally. */
+/** Persist a project removal via the dedicated excluded endpoint (always
+ *  merges/union, no TOCTOU). */
 async function persistExcludedProjectCwd(cwd: string): Promise<void> {
-  await fetch("/api/preferences", {
-    method: "PUT",
+  await fetch("/api/preferences/excluded", {
+    method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ excludedProjectCwds: [cwd] }),
+    body: JSON.stringify({ cwds: [cwd] }),
   }).catch(() => undefined);
 }
 

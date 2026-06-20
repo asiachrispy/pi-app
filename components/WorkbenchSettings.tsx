@@ -28,7 +28,7 @@ function useExcludedProjectCwds() {
 }
 
 async function restoreExcludedProjectCwd(cwd: string) {
-  await fetch(`/api/preferences?rmExcluded=${encodeURIComponent(cwd)}`, {
+  await fetch(`/api/preferences/excluded?cwd=${encodeURIComponent(cwd)}`, {
     method: "DELETE",
   });
 }
