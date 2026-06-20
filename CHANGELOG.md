@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.8.11] - 2026-06-20
+
+**Bundle:** `0.8.11p0.79.9` (pi-app + `@livos/pi-coding-agent`)
+
+### Changed
+- **抽离 pi-app 专属逻辑**：合并 PR #7，将 `AppShell` / `ChatInput` 中的终端面板和工具预设逻辑抽到 `hooks/useTerminalPanel` 与 `lib/chat-input-tool-presets`，并补齐对应单测。
+- **发布版本元数据**：补齐 `package-lock.json` 的根包版本同步，确保 v0.8.11 基于一致的 package / lockfile 版本发布。
+
 ## [0.8.9] - 2026-06-17
 
 **Bundle:** `0.8.9p0.79.9` (pi-app + `@livos/pi-coding-agent`)
