@@ -7,30 +7,16 @@ import { getPickerCwds, pickMostRecentSession } from "@/lib/session-projects";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 
-/** Persist + DELETE a project from the picker. On "add" we first read the
- *  current excluded list so a second removal doesn't overwrite the first.
- *  On error we still let the caller optimistically drop the cwd from local
- *  state so the user sees feedback. */
-async function persistExcludedProjectCwd(cwd: string, action: "add" | "remove"): Promise<void> {
-  if (action === "add") {
-    const res = await fetch("/api/preferences").then((r) => r.json()).catch(() => ({ preferences: {} as { excludedProjectCwds?: string[] } }));
-    const current = res.preferences?.excludedProjectCwds ?? [];
-    if (!current.includes(cwd)) {
-      await fetch("/api/preferences", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ excludedProjectCwds: [...current, cwd] }),
-      }).catch(() => undefined);
-    }
-  } else {
-    const res = await fetch("/api/preferences").then((r) => r.json()).catch(() => ({ preferences: {} as { excludedProjectCwds?: string[] } }));
-    const current = (res.preferences?.excludedProjectCwds ?? []).filter((c: string) => c !== cwd);
-    await fetch("/api/preferences", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ excludedProjectCwds: current }),
-    }).catch(() => undefined);
-  }
+/** Persist a project removal to the preferences API. The server always
+ *  merges (union) incoming excludedProjectCwds with the existing list, so
+ *  we can simply send [cwd] without a read-then-append round-trip. On
+ *  error we still let the caller optimistically drop the cwd locally. */
+async function persistExcludedProjectCwd(cwd: string): Promise<void> {
+  await fetch("/api/preferences", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ excludedProjectCwds: [cwd] }),
+  }).catch(() => undefined);
 }
 
 function RemoveProjectButton({ cwd, isCurrent, onRemove, label, disabledLabel }: {
@@ -484,7 +470,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const handleRemoveProject = useCallback((cwd: string) => {
     setPickerProjectCwds((prev) => prev.filter((c) => c !== cwd));
     setLocallyHiddenCwds((prev) => new Set(prev).add(cwd));
-    void persistExcludedProjectCwd(cwd, "add");
+    void persistExcludedProjectCwd(cwd);
   }, []);
 
   // Close dropdown on outside click

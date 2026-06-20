@@ -27,11 +27,9 @@ function useExcludedProjectCwds() {
   return { list, loading, reload, setList };
 }
 
-async function putExcludedProjectCwds(next: string[]) {
-  await fetch("/api/preferences", {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ excludedProjectCwds: next }),
+async function restoreExcludedProjectCwd(cwd: string) {
+  await fetch(`/api/preferences?rmExcluded=${encodeURIComponent(cwd)}`, {
+    method: "DELETE",
   });
 }
 
@@ -156,7 +154,7 @@ export function WorkbenchSettings({
                         const next = excluded.list.filter((c) => c !== cwd);
                         excluded.setList(next); // optimistic
                         try {
-                          await putExcludedProjectCwds(next);
+                          await restoreExcludedProjectCwd(cwd);
                         } finally {
                           excluded.reload();
                         }

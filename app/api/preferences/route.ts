@@ -5,6 +5,7 @@ import {
   addExcludedProjectCwd,
   loadPiWebPreferences,
   mergePiWebPreferences,
+  removeExcludedProjectCwd,
   savePiWebPreferences,
   type PiWebPreferences,
   type ToolMode,
@@ -63,7 +64,9 @@ export async function PUT(req: Request) {
     // Process all other preference fields normally.
     let preferences = mergePiWebPreferences(sanitizePatch(body));
 
-    // Handle excludedProjectCwds: union for adds, replace for restore.
+    // Handle excludedProjectCwds. Always union (add) to prevent TOCTOU.
+    // Restore from Settings uses DELETE (see below) to remove individual
+    // cwds from the exclusion list.
     if (Array.isArray(rawExcluded)) {
       const cleaned = (rawExcluded as unknown[])
         .filter((entry): entry is string => typeof entry === "string")
@@ -76,21 +79,31 @@ export async function PUT(req: Request) {
           preferences = savePiWebPreferences({ ...preferences, excludedProjectCwds: [] });
         }
       } else {
-        const current = preferences.excludedProjectCwds ?? [];
-        // Replace when every incoming cwd already exists (Settings restore).
-        const isReplace = cleaned.every((c) => current.includes(c));
-        if (isReplace) {
-          preferences = savePiWebPreferences({ ...preferences, excludedProjectCwds: cleaned });
-        } else {
-          // Union: add each new cwd via its own atomic read-append-write.
-          for (const cwd of cleaned) {
-            preferences = addExcludedProjectCwd(cwd);
-          }
+        // Union: each cwd gets its own atomic read-append-write call.
+        for (const cwd of cleaned) {
+          preferences = addExcludedProjectCwd(cwd);
         }
       }
     }
 
     return NextResponse.json({ ok: true, preferences });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+/** Remove a single cwd from excludedProjectCwds — used by Settings restore. */
+export async function DELETE(req: Request) {
+  const rejected = rejectUnsafeMutation(req);
+  if (rejected) return rejected;
+
+  try {
+    const url = new URL(req.url);
+    const cwd = url.searchParams.get("rmExcluded");
+    if (cwd && cwd.trim()) {
+      removeExcludedProjectCwd(cwd.trim());
+    }
+    return NextResponse.json({ ok: true, preferences: loadPiWebPreferences() });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
