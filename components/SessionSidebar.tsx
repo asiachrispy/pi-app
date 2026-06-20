@@ -7,15 +7,21 @@ import { getPickerCwds, pickMostRecentSession } from "@/lib/session-projects";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 
-/** Persist + DELETE a project from the picker. On error we still let the caller
- *  optimistically drop the cwd from local state so the user sees feedback. */
+/** Persist + DELETE a project from the picker. On "add" we first read the
+ *  current excluded list so a second removal doesn't overwrite the first.
+ *  On error we still let the caller optimistically drop the cwd from local
+ *  state so the user sees feedback. */
 async function persistExcludedProjectCwd(cwd: string, action: "add" | "remove"): Promise<void> {
   if (action === "add") {
-    await fetch("/api/preferences", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ excludedProjectCwds: [cwd] }),
-    }).catch(() => undefined);
+    const res = await fetch("/api/preferences").then((r) => r.json()).catch(() => ({ preferences: {} as { excludedProjectCwds?: string[] } }));
+    const current = res.preferences?.excludedProjectCwds ?? [];
+    if (!current.includes(cwd)) {
+      await fetch("/api/preferences", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ excludedProjectCwds: [...current, cwd] }),
+      }).catch(() => undefined);
+    }
   } else {
     const res = await fetch("/api/preferences").then((r) => r.json()).catch(() => ({ preferences: {} as { excludedProjectCwds?: string[] } }));
     const current = (res.preferences?.excludedProjectCwds ?? []).filter((c: string) => c !== cwd);
@@ -278,6 +284,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [pickerProjectCwds, setPickerProjectCwds] = useState<string[]>([]);
+  /** Cwds the user hid in this session via the × button. Prevents the
+   *  `projectCwds` useMemo from pushing them back from `allSessions`
+   *  while the preferences API hasn't responded yet. */
+  const [locallyHiddenCwds, setLocallyHiddenCwds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
@@ -467,12 +477,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }, []);
 
-  // Hide a project from the dropdown. Optimistic local update first, then
-  // persist via the preferences API. The button is disabled for the currently
-  // selected project so the user can never accidentally lose their chat view.
+  // Hide a project from the dropdown. Keeps the dropdown open so the user
+  // can remove multiple projects without re-opening. The × button is
+  // disabled for the currently selected project so the user can never
+  // accidentally lose their chat view.
   const handleRemoveProject = useCallback((cwd: string) => {
     setPickerProjectCwds((prev) => prev.filter((c) => c !== cwd));
-    setDropdownOpen(false);
+    setLocallyHiddenCwds((prev) => new Set(prev).add(cwd));
     void persistExcludedProjectCwd(cwd, "add");
   }, []);
 
@@ -512,8 +523,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         merged.push(cwd);
       }
     }
-    return merged;
-  }, [pickerProjectCwds, allSessions]);
+    // Exclude cwds the user hid in this session. Together with the API-side
+    // excludedProjectCwds filter (which removes them from pickerProjectCwds
+    // on the next /api/sessions fetch), this guarantees the cwd stays gone.
+    if (locallyHiddenCwds.size === 0) return merged;
+    return merged.filter((cwd) => !locallyHiddenCwds.has(cwd));
+  }, [pickerProjectCwds, allSessions, locallyHiddenCwds]);
   const filteredSessions = filterCwd
     ? allSessions.filter((s) => s.cwd === filterCwd)
     : allSessions;
