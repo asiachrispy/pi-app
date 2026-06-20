@@ -31,6 +31,9 @@ async function restoreExcludedProjectCwd(cwd: string) {
   await fetch(`/api/preferences/excluded?cwd=${encodeURIComponent(cwd)}`, {
     method: "DELETE",
   });
+  // Tell the sidebar to refetch its excluded list so the project picker
+  // immediately reflects the restoration.
+  window.dispatchEvent(new CustomEvent("pi-excluded-projects-changed"));
 }
 
 interface Props {

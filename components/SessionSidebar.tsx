@@ -272,6 +272,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
    *  `projectCwds` useMemo from pushing them back from `allSessions`
    *  while the preferences API hasn't responded yet. */
   const [locallyHiddenCwds, setLocallyHiddenCwds] = useState<Set<string>>(new Set());
+  /** Cwds excluded via the persisted preference — loaded on mount so the
+   *  `projectCwds` useMemo can filter them out of `allSessions` too,
+   *  otherwise excluded projects reappear from the session list. */
+  const [persistedExcludedCwds, setPersistedExcludedCwds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
@@ -344,6 +348,23 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       if (d.home) setHomeDir(d.home);
     }).catch(() => {});
   }, []);
+
+  // Load persisted excludedProjectCwds so the project list stays filtered
+  // even when allSessions re-introduces those cwds from the session log.
+  const reloadPersistedExcluded = useCallback(() => {
+    fetch("/api/preferences", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { preferences?: { excludedProjectCwds?: string[] } }) => {
+        setPersistedExcludedCwds(new Set(d.preferences?.excludedProjectCwds ?? []));
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    reloadPersistedExcluded();
+    const onRestore = () => reloadPersistedExcluded();
+    window.addEventListener("pi-excluded-projects-changed", onRestore);
+    return () => window.removeEventListener("pi-excluded-projects-changed", onRestore);
+  }, [reloadPersistedExcluded]);
 
   const restoredRef = useRef(false);
 
@@ -468,6 +489,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const handleRemoveProject = useCallback((cwd: string) => {
     setPickerProjectCwds((prev) => prev.filter((c) => c !== cwd));
     setLocallyHiddenCwds((prev) => new Set(prev).add(cwd));
+    setPersistedExcludedCwds((prev) => new Set(prev).add(cwd));
     void persistExcludedProjectCwd(cwd);
   }, []);
 
@@ -499,20 +521,21 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [filterCwd, onNewSession]);
 
   const projectCwds = useMemo(() => {
-    const seen = new Set(pickerProjectCwds);
-    const merged = [...pickerProjectCwds];
+    // Union of cwds the user has hidden. Persisted exclusions survive
+    // restart; local exclusions hide items immediately until the API
+    // refetch reflects them. Either way, both sources must be filtered.
+    const hidden = new Set([...persistedExcludedCwds, ...locallyHiddenCwds]);
+    const merged: string[] = [];
+    for (const cwd of pickerProjectCwds) {
+      if (!hidden.has(cwd)) merged.push(cwd);
+    }
     for (const cwd of getPickerCwds(allSessions)) {
-      if (!seen.has(cwd)) {
-        seen.add(cwd);
+      if (!merged.includes(cwd) && !hidden.has(cwd)) {
         merged.push(cwd);
       }
     }
-    // Exclude cwds the user hid in this session. Together with the API-side
-    // excludedProjectCwds filter (which removes them from pickerProjectCwds
-    // on the next /api/sessions fetch), this guarantees the cwd stays gone.
-    if (locallyHiddenCwds.size === 0) return merged;
-    return merged.filter((cwd) => !locallyHiddenCwds.has(cwd));
-  }, [pickerProjectCwds, allSessions, locallyHiddenCwds]);
+    return merged;
+  }, [pickerProjectCwds, allSessions, locallyHiddenCwds, persistedExcludedCwds]);
   const filteredSessions = filterCwd
     ? allSessions.filter((s) => s.cwd === filterCwd)
     : allSessions;
