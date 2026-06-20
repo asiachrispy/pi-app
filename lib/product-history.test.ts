@@ -16,7 +16,7 @@ const baseSession = (overrides: Partial<SessionInfo>): SessionInfo => ({
 
 describe("buildHistoryItems", () => {
   it("prefers product metadata title and summary over session fields", () => {
-    const sessions = [baseSession({ id: "s1", name: "Session name", firstMessage: "Hello" })];
+    const sessions = [baseSession({ id: "s1", cwd: "/home/user/project", name: "Session name", firstMessage: "Hello" })];
     const metadata: ProductSessionMetadataMap = {
       s1: {
         title: "Custom title",
@@ -33,12 +33,14 @@ describe("buildHistoryItems", () => {
     expect(item.status).toBe("completed");
     expect(item.startedAt).toBe("2026-06-01T10:00:00.000Z");
     expect(item.updatedAt).toBe("2026-06-01T11:00:00.000Z");
+    expect(item.projectName).toBe("project");
   });
 
   it("falls back to session name, first message, and active status", () => {
     const sessions = [
       baseSession({
         id: "a",
+        cwd: "/work/repo-a",
         name: "Named",
         firstMessage: "First line",
         created: "2026-06-01T08:00:00.000Z",
@@ -46,6 +48,7 @@ describe("buildHistoryItems", () => {
       }),
       baseSession({
         id: "b",
+        cwd: "/tmp/work",
         firstMessage: "",
         created: "2026-06-01T09:00:00.000Z",
         modified: "2026-06-01T09:10:00.000Z",
@@ -56,18 +59,22 @@ describe("buildHistoryItems", () => {
     expect(byId.a.title).toBe("Named");
     expect(byId.a.summary).toBe("First line");
     expect(byId.a.status).toBe("active");
+    expect(byId.a.projectName).toBe("repo-a");
     expect(byId.b.title).toBe("(untitled)");
     expect(byId.b.summary).toBe("");
+    expect(byId.b.projectName).toBe("work");
   });
 
   it("sorts by updatedAt descending", () => {
     const sessions = [
-      baseSession({ id: "old", modified: "2026-06-01T08:00:00.000Z" }),
-      baseSession({ id: "new", modified: "2026-06-01T12:00:00.000Z" }),
+      baseSession({ id: "old", cwd: "/work/old-project", modified: "2026-06-01T08:00:00.000Z" }),
+      baseSession({ id: "new", cwd: "/work/new-project", modified: "2026-06-01T12:00:00.000Z" }),
     ];
 
     const items = buildHistoryItems(sessions, {});
     expect(items.map((i) => i.sessionId)).toEqual(["new", "old"]);
+    expect(items[0].projectName).toBe("new-project");
+    expect(items[1].projectName).toBe("old-project");
   });
 });
 

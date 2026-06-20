@@ -1,12 +1,12 @@
 # Pi Workbench — macOS 壳（M1-A）
 
-薄 macOS 应用：内嵌子进程运行 `bin/pi-web.js`，`WKWebView` 加载 `http://127.0.0.1:30141`，注入 `window.piNative`。
+薄 macOS 应用：内嵌子进程运行 `bin/pi-app.js`，`WKWebView` 加载 `http://127.0.0.1:30141`，注入 `window.piNative`。
 
 ## 开发运行（本机已安装 Node）
 
 ```bash
-# 终端 1：可先手动起 pi-web（可选；壳也会自动 spawn）
-cd /path/to/pi-web && npm run dev
+# 终端：可先手动起 pi-app（可选；壳也会自动 spawn）
+cd /path/to/pi-app && npm run dev
 
 # 终端 2：构建并运行壳
 cd /path/to/pi-web/macos/PiWorkbench

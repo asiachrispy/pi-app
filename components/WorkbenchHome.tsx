@@ -163,8 +163,7 @@ export function WorkbenchHome({
                     <div className="mt-1 truncate text-[12px] text-text-muted">{item.summary}</div>
                   </div>
                   <div
-                    className="shrink-0 truncate text-[12px] text-text-muted"
-                    style={{ maxWidth: "160px" }}
+                    className="shrink-0 truncate max-w-[160px] text-[12px] text-text-muted"
                     aria-label={t("workbenchHome.projectName")}
                   >
                     {item.projectName}
