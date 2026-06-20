@@ -5,6 +5,46 @@ import { useTerminal } from "./useTerminal";
 import { resetTerminalManagerForTests, getTerminalManager } from "@/lib/terminal/manager";
 import { _resetTerminalSettingsCache } from "@/lib/terminal/settings";
 
+// jsdom does not provide `node:` built-ins (fs/os/path/child_process). The real
+// `@/lib/terminal/*` modules pull them in transitively, so mock both modules
+// that useTerminal touches with in-memory stubs that match the surface used in
+// this test file. vi.mock calls are hoisted by vitest before any import.
+vi.mock("@/lib/terminal/settings", () => ({
+	_resetTerminalSettingsCache: () => {},
+}));
+
+vi.mock("@/lib/terminal/manager", () => {
+	const sessions = new Map<string, ReturnType<typeof createSession>>();
+	function createSession(cwd: string) {
+		return {
+			cwd,
+			buffer: [] as Array<{ text: string; timestamp: number }>,
+			history: [] as string[],
+			listeners: new Set<(event: unknown) => void>(),
+			emit(event: unknown) {
+				for (const l of this.listeners) l(event);
+			},
+			subscribe(listener: (event: unknown) => void) {
+				this.listeners.add(listener);
+				return () => this.listeners.delete(listener);
+			},
+		};
+	}
+	return {
+		resetTerminalManagerForTests: () => sessions.clear(),
+		getTerminalManager: () => ({
+			getOrCreate(cwd: string) {
+				let s = sessions.get(cwd);
+				if (!s) {
+					s = createSession(cwd);
+					sessions.set(cwd, s);
+				}
+				return s;
+			},
+		}),
+	};
+});
+
 class MockEventSource {
   static instances: MockEventSource[] = [];
   url: string;

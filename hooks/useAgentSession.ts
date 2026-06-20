@@ -107,6 +107,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [entryIds, setEntryIds] = useState<string[]>([]);
   const [streamState, dispatch] = useReducer(streamReducer, { isStreaming: false, streamingMessage: null });
   const [agentRunning, setAgentRunning] = useState(false);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelList, setModelList] = useState<{ id: string; name: string; provider: string; input?: ("text" | "image")[] }[]>([]);
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
@@ -454,6 +455,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       case "auto_retry_end":
         setRetryInfo(null);
+        if (event.success === false && event.finalError) {
+          setRuntimeError(event.finalError as string);
+        }
+        break;
+      case "agent_error":
+        setAgentRunning(false);
+        setAgentPhase(null);
+        dispatch({ type: "end" });
+        setRuntimeError(event.error as string);
         break;
       case "auto_compaction_start":
       case "compaction_start":
@@ -850,6 +860,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     onBranchNavigatingChange?.(branchNavigating);
   }, [branchNavigating, onBranchNavigatingChange]);
 
+  // Derived: tracks whether any user-role message exists, recomputed only when
+  // the message count changes. Used inside the scroll-reset effect so we can
+  // declare `messages.length` (not `messages`) as the dep — avoids re-firing
+  // on every message reference update from streaming/state merges while still
+  // satisfying `react-hooks/exhaustive-deps`.
+  const hasUserMessage = messages.length > 0 && messages.some((m) => m.role === "user");
+
   useEffect(() => {
     if (messages.length > 0) {
       if (pendingScrollToUserRef.current) {
@@ -858,7 +875,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         scrollUserMsgToTop();
       } else if (!initialScrollDoneRef.current) {
         initialScrollDoneRef.current = true;
-        if (agentRunningRef.current && messages.some((m) => m.role === "user")) {
+        if (agentRunningRef.current && hasUserMessage) {
           scrollUserMsgToTop();
         } else {
           scrollToBottom("instant");
@@ -867,7 +884,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         scrollToBottom("smooth");
       }
     }
-  }, [messages.length, agentRunning, scrollToBottom, scrollUserMsgToTop]);
+  }, [messages.length, hasUserMessage, agentRunning, scrollToBottom, scrollUserMsgToTop]);
 
   // Load model list
   useEffect(() => {
@@ -896,13 +913,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => clearTimeout(t);
   }, [compactError]);
 
+  // Runtime error auto-dismiss (15s — longer than compactError so users can read it)
+  useEffect(() => {
+    if (!runtimeError) return;
+    const t = setTimeout(() => setRuntimeError(null), 15_000);
+    return () => clearTimeout(t);
+  }, [runtimeError]);
+
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId, cloning, branchNavigating,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
-    agentPhase,
+    agentPhase, runtimeError,
     remoteAuthError,
     isNew,
     // Refs
