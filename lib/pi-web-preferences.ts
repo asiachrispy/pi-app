@@ -17,6 +17,10 @@ export interface PiWebPreferences {
   /** When true, macOS Pi.app holds a system idle-sleep-preventing power
    *  assertion for the whole app session (not just while a task is running). */
   keepAwakeAlways?: boolean;
+  /** Project cwds the user explicitly hid from the project picker. Session
+   *  files are preserved — only the picker hides them. Cleared via the
+   *  Settings → Hidden projects panel. */
+  excludedProjectCwds?: string[];
 }
 
 export const PI_WEB_PREFERENCES_FILENAME = "pi-web-preferences.json";
@@ -69,4 +73,38 @@ export function rememberWorkspaceCwd(cwd: string): PiWebPreferences {
   const recentWorkspaceCwds = [trimmed, ...previous.filter((entry) => entry !== trimmed)]
     .slice(0, MAX_RECENT_WORKSPACE_CWDS);
   return savePiWebPreferences({ ...current, recentWorkspaceCwds });
+}
+
+/**
+ * Add a project cwd to the exclusion list. Idempotent and order-preserving:
+ * if the cwd is already excluded, the list is unchanged. The corresponding
+ * session files on disk are left untouched — the user can restore from
+ * Settings → Hidden projects.
+ */
+export function addExcludedProjectCwd(cwd: string): PiWebPreferences {
+  const trimmed = cwd.trim();
+  if (!trimmed) return loadPiWebPreferences();
+  const current = loadPiWebPreferences();
+  const previous = current.excludedProjectCwds ?? [];
+  if (previous.includes(trimmed)) return current;
+  return savePiWebPreferences({
+    ...current,
+    excludedProjectCwds: [...previous, trimmed],
+  });
+}
+
+/**
+ * Remove a project cwd from the exclusion list so the picker shows it again.
+ * No-op if the cwd was not excluded. Session files were never deleted.
+ */
+export function removeExcludedProjectCwd(cwd: string): PiWebPreferences {
+  const trimmed = cwd.trim();
+  if (!trimmed) return loadPiWebPreferences();
+  const current = loadPiWebPreferences();
+  const previous = current.excludedProjectCwds ?? [];
+  if (!previous.includes(trimmed)) return current;
+  return savePiWebPreferences({
+    ...current,
+    excludedProjectCwds: previous.filter((entry) => entry !== trimmed),
+  });
 }

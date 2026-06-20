@@ -41,7 +41,9 @@
     ".next-dev-30143-test/types/**/*.ts",
     ".next-dev-30143-test/dev/types/**/*.ts",
     ".next-dev-30144-test/types/**/*.ts",
-    ".next-dev-30144-test/dev/types/**/*.ts"
+    ".next-dev-30144-test/dev/types/**/*.ts",
+    "./.next/types/**/*.ts",
+    "./.next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

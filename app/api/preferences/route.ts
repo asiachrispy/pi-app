@@ -32,6 +32,15 @@ function sanitizePatch(body: unknown): Partial<PiWebPreferences> {
   if (typeof input.keepAwakeAlways === "boolean") {
     patch.keepAwakeAlways = input.keepAwakeAlways;
   }
+  if (Array.isArray(input.excludedProjectCwds)) {
+    const cleaned = input.excludedProjectCwds
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (cleaned.length > 0) {
+      patch.excludedProjectCwds = Array.from(new Set(cleaned));
+    }
+  }
 
   return patch;
 }

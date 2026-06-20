@@ -40,7 +40,7 @@
     "test:m2": "node scripts/m2-preflight.mjs",
     "test:m3": "node scripts/m3-preflight.mjs",
     "test:m4": "node scripts/m4-preflight.mjs",
-    "postinstall": "node scripts/install-cli.mjs",
+    "postinstall": "node scripts/install-cli.mjs && node scripts/patch-next-generate-build-id.mjs",
     "postuninstall": "node scripts/uninstall-cli.mjs",
     "package:macos": "bash scripts/package-macos-app.sh",
     "release:sync-pi": "bash scripts/sync-pi-upstream.sh",

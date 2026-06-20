@@ -7,6 +7,73 @@ import { getPickerCwds, pickMostRecentSession } from "@/lib/session-projects";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 
+/** Persist + DELETE a project from the picker. On error we still let the caller
+ *  optimistically drop the cwd from local state so the user sees feedback. */
+async function persistExcludedProjectCwd(cwd: string, action: "add" | "remove"): Promise<void> {
+  if (action === "add") {
+    await fetch("/api/preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ excludedProjectCwds: [cwd] }),
+    }).catch(() => undefined);
+  } else {
+    const res = await fetch("/api/preferences").then((r) => r.json()).catch(() => ({ preferences: {} as { excludedProjectCwds?: string[] } }));
+    const current = (res.preferences?.excludedProjectCwds ?? []).filter((c: string) => c !== cwd);
+    await fetch("/api/preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ excludedProjectCwds: current }),
+    }).catch(() => undefined);
+  }
+}
+
+function RemoveProjectButton({ cwd, isCurrent, onRemove, label, disabledLabel }: {
+  cwd: string;
+  isCurrent: boolean;
+  onRemove: (cwd: string) => void;
+  label: string;
+  disabledLabel: string;
+}) {
+  const [hover, setHover] = useState(false);
+  const titleAttr = isCurrent ? disabledLabel : label;
+  return (
+    <button
+      type="button"
+      aria-label={titleAttr}
+      title={titleAttr}
+      disabled={isCurrent}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isCurrent) return;
+        onRemove(cwd);
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flexShrink: 0,
+        width: 22,
+        height: 22,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: 4,
+        padding: 0,
+        background: "none",
+        border: "none",
+        borderRadius: 4,
+        color: isCurrent ? "var(--text-dim)" : hover ? "#dc2626" : "var(--text-dim)",
+        cursor: isCurrent ? "not-allowed" : "pointer",
+        opacity: isCurrent ? 0.4 : hover ? 1 : 0.7,
+        fontSize: 14,
+        lineHeight: 1,
+        transition: "color 0.12s, opacity 0.12s",
+      }}
+    >
+      ×
+    </button>
+  );
+}
+
 interface Props {
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
@@ -400,6 +467,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }, []);
 
+  // Hide a project from the dropdown. Optimistic local update first, then
+  // persist via the preferences API. The button is disabled for the currently
+  // selected project so the user can never accidentally lose their chat view.
+  const handleRemoveProject = useCallback((cwd: string) => {
+    setPickerProjectCwds((prev) => prev.filter((c) => c !== cwd));
+    setDropdownOpen(false);
+    void persistExcludedProjectCwd(cwd, "add");
+  }, []);
+
   // Close dropdown on outside click
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -605,55 +681,77 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 overflowY: "auto",
               }}
             >
-              {projectCwds.map((cwd) => (
-                <button
-                  key={cwd}
-                  onClick={() => {
-                    const isProjectSwitch = cwd !== filterCwd;
-                    if (isProjectSwitch) {
-                      const mostRecent = pickMostRecentSession(allSessions, cwd);
-                      if (mostRecent) {
-                        // Auto-open the most recent session for this project.
-                        // handleCwdChange will then see the matching selectedSession
-                        // and skip its reset-to-home step.
-                        onSelectSession(mostRecent);
-                      }
-                    }
-                    setSelectedCwd(cwd);
-                    setCustomPathOpen(false);
-                    setCustomPathValue("");
-                    setCustomPathError(null);
-                    setDropdownOpen(false);
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 7,
-                    width: "100%",
-                    padding: "8px 10px",
-                    background: cwd === filterCwd ? "var(--bg-selected)" : "none",
-                    border: "none",
-                    borderBottom: "1px solid var(--border)",
-                    color: cwd === filterCwd ? "var(--text)" : "var(--text-muted)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: 11,
-                    fontFamily: "var(--font-mono)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={cwd}
-                >
-                  {cwd === filterCwd && (
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                      <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                    </svg>
-                  )}
-                  {cwd !== filterCwd && <span style={{ width: 10, flexShrink: 0 }} />}
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortenCwd(cwd, homeDir)}</span>
-                </button>
-              ))}
+              {projectCwds.map((cwd) => {
+                const isCurrent = cwd === filterCwd;
+                return (
+                  <div
+                    key={cwd}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      borderBottom: "1px solid var(--border)",
+                      background: isCurrent ? "var(--bg-selected)" : "none",
+                    }}
+                  >
+                    <button
+                      onClick={() => {
+                        const isProjectSwitch = cwd !== filterCwd;
+                        if (isProjectSwitch) {
+                          const mostRecent = pickMostRecentSession(allSessions, cwd);
+                          if (mostRecent) {
+                            // Auto-open the most recent session for this project.
+                            // handleCwdChange will then see the matching selectedSession
+                            // and skip its reset-to-home step.
+                            onSelectSession(mostRecent);
+                          }
+                        }
+                        setSelectedCwd(cwd);
+                        setCustomPathOpen(false);
+                        setCustomPathValue("");
+                        setCustomPathError(null);
+                        setDropdownOpen(false);
+                      }}
+                      title={cwd}
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        padding: "8px 6px 8px 10px",
+                        background: "none",
+                        border: "none",
+                        color: isCurrent ? "var(--text)" : "var(--text-muted)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isCurrent ? (
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                          <polyline points="1.5 5 4 7.5 8.5 2.5" />
+                        </svg>
+                      ) : (
+                        <span style={{ width: 10, flexShrink: 0 }} />
+                      )}
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortenCwd(cwd, homeDir)}</span>
+                    </button>
+                    {/* Remove-project button. Disabled for the currently selected
+                        cwd to avoid kicking the user back to Home. */}
+                    <RemoveProjectButton
+                      cwd={cwd}
+                      isCurrent={isCurrent}
+                      onRemove={handleRemoveProject}
+                      label={t("sessionSidebar.removeProject")}
+                      disabledLabel={t("sessionSidebar.removeProjectDisabledCurrent")}
+                    />
+                  </div>
+                );
+              })}
 
               {/* Default cwd shortcut */}
               {!customPathOpen && (

@@ -63,7 +63,11 @@ export async function listProjectCwdsForPicker(): Promise<string[]> {
       cwds.push(cwd);
     }
   }
-  return cwds;
+  // User explicitly hid these from the project picker. Session files are
+  // preserved on disk — they are only hidden from the dropdown. Filtered last
+  // so the dedup above can still dedupe an excluded cwd against a session cwd.
+  const excluded = new Set(prefs.excludedProjectCwds ?? []);
+  return excluded.size === 0 ? cwds : cwds.filter((cwd) => !excluded.has(cwd));
 }
 
 export async function listAllSessions(): Promise<SessionInfo[]> {

@@ -102,4 +102,36 @@ describe("listProjectCwdsForPicker", () => {
     expect(cwds).toContain("/Users/mk/scratch/new-proj");
     expect(cwds).toContain("/Users/mk/codespace/pi-web");
   });
+
+  it("hides cwds that the user has added to excludedProjectCwds", async () => {
+    prefsMock.mockReturnValue({
+      excludedProjectCwds: ["/Users/mk/codespace/pi-web"],
+    });
+    listAllMock.mockResolvedValue([
+      { cwd: "/Users/mk/codespace/pi-web", modified: new Date("2026-06-02") },
+      { cwd: "/Users/mk/codespace/pi", modified: new Date("2026-06-01") },
+    ]);
+
+    const { listProjectCwdsForPicker } = await import("./session-reader");
+    const cwds = await listProjectCwdsForPicker();
+
+    expect(cwds).not.toContain("/Users/mk/codespace/pi-web");
+    expect(cwds).toContain("/Users/mk/codespace/pi");
+  });
+
+  it("excludes both a session cwd and a recent-only cwd when both are listed", async () => {
+    prefsMock.mockReturnValue({
+      recentWorkspaceCwds: ["/Users/mk/scratch/no-session"],
+      excludedProjectCwds: ["/Users/mk/scratch/no-session", "/Users/mk/codespace/pi-web"],
+    });
+    listAllMock.mockResolvedValue([
+      { cwd: "/Users/mk/codespace/pi-web", modified: new Date("2026-06-02") },
+      { cwd: "/Users/mk/codespace/pi", modified: new Date("2026-06-01") },
+    ]);
+
+    const { listProjectCwdsForPicker } = await import("./session-reader");
+    const cwds = await listProjectCwdsForPicker();
+
+    expect(cwds).toEqual(["/Users/mk/codespace/pi"]);
+  });
 });

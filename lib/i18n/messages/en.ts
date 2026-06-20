@@ -80,6 +80,8 @@ export const en = {
     collapseForks: "Collapse forks",
     rename: "Rename",
     delete: "Delete",
+    removeProject: "Remove from list",
+    removeProjectDisabledCurrent: "Switch to another project first",
   },
   chatWindow: {
     runningTool: "Running tool...",
@@ -571,6 +573,11 @@ export const en = {
     activityActive: "Active",
     activityLoading: "Loading activity…",
     activityEmpty: "No sessions in this period.",
+    hiddenProjects: "Hidden projects",
+    hiddenProjectsDescription: "Directories you removed from the project dropdown. Session files are kept on disk — you can restore them any time.",
+    hiddenProjectsEmpty: "No hidden projects.",
+    restoreProject: "Restore",
+    restoreProjectTitle: "Show this project in the dropdown again",
   },
   tools: {
     capability: {
