@@ -54,7 +54,7 @@
     "relay:host": "node --experimental-strip-types scripts/pi-relay-host.ts",
     "relay:client": "node --experimental-strip-types scripts/pi-relay-client.ts",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public",
-    "prepublishOnly": "node_modules/.bin/tsc --noEmit && node_modules/.bin/vitest run"
+    "prepublishOnly": "tsc --noEmit && node_modules/.bin/vitest run"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "npm:@livos/pi-ai@0.79.9",
