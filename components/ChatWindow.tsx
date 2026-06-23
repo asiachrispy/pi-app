@@ -1,19 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentMessage, SessionInfo, SessionTreeNode, TextContent, ToolResultMessage } from "@/lib/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
-import { getNativeBridge, notifyAgentEnd } from "@/lib/notify-agent-end";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
-import { invalidateControlResource } from "@/hooks/useControlCollection";
-import { summarizeForHistory } from "@/lib/history-summary";
-import { useI18n } from "@/lib/i18n/provider";
-import type { ToolMode } from "@/lib/pi-web-preferences";
-import type { SlashCommandEntry } from "@/lib/slash-commands";
 
 interface Props {
   session: SessionInfo | null;
@@ -24,14 +18,9 @@ interface Props {
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
-  onBranchNavigatingChange?: (navigating: boolean) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   onSessionStatsChange?: (stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
-  toolMode?: ToolMode;
-  onOpenModels?: () => void;
-  onOpenSettings?: () => void;
-  onOpenFile?: (filePath: string, fileName: string) => void;
 }
 
 function phaseLabel(phase: AgentPhase): string {
@@ -101,25 +90,22 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onBranchNavigatingChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, toolMode = "full", onOpenModels, onOpenSettings, onOpenFile }: Props) {
-  const { t } = useI18n();
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange }: Props) {
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
-    retryInfo, contextUsage, forkingEntryId, cloning,
+    retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     agentPhase,
-    remoteAuthError,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
-    handleSend, handleAbort, handleFork, handleClone, handleNavigate, handleModelChange,
+    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
     handleToolPresetChange, handleThinkingLevelChange, handleAgentEventRef,
-    sessionIdRef,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
-    modelsRefreshKey, onBranchDataChange, onBranchNavigatingChange, onSystemPromptChange, toolMode,
+    modelsRefreshKey, onBranchDataChange, onSystemPromptChange,
   });
 
   const { soundEnabled, onSoundToggle, playDoneSound } = useAudio();
@@ -127,45 +113,17 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   playDoneSoundRef.current = playDoneSound;
   const soundEnabledRef = useRef(soundEnabled);
   soundEnabledRef.current = soundEnabled;
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-  // Wrap agent event handler to play sound on agent_end and to push the latest
-  // assistant output into product-session metadata so the history view can
-  // show a real summary. The PATCH is fire-and-forget; failures only warn.
+
+  // Wrap agent event handler to play sound on agent_end
   const origHandler = handleAgentEventRef.current;
   useEffect(() => {
     handleAgentEventRef.current = (event) => {
-      if (event.type === "agent_end") {
-        if (soundEnabledRef.current) {
-          playDoneSoundRef.current();
-        }
-        const id = sessionIdRef.current;
-        if (id && getNativeBridge()) {
-          const sessionName = sessionRef.current?.name ?? id;
-          void notifyAgentEnd({ sessionId: id, sessionName }).catch(() => {});
-        }
-        if (id) {
-          const summary = lastResultSummaryRef.current;
-          void fetch(`/api/product-sessions/${encodeURIComponent(id)}`, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ lastResultSummary: summary, status: "completed" }),
-          })
-            .then((res) => {
-              if (!res.ok) {
-                console.warn(`[ChatWindow] metadata update failed: ${res.status}`);
-                return;
-              }
-              invalidateControlResource("workbench:history:recent");
-            })
-            .catch((err) => {
-              console.warn("[ChatWindow] metadata update error:", err);
-            });
-        }
+      if (event.type === "agent_end" && soundEnabledRef.current) {
+        playDoneSoundRef.current();
       }
       origHandler?.(event);
     };
-  }, [origHandler, handleAgentEventRef, sessionIdRef]);
+  }, [origHandler, handleAgentEventRef]);
 
   // Push session stats up to AppShell for the top bar.
   // Compare scalar fields to avoid loops from new object identity each render.
@@ -190,17 +148,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
 
-  const supportsImages = (() => {
-    if (!displayModelValue) return true;
-    const entry = modelList.find(
-      (m) => m.provider === displayModelValue.provider && m.id === displayModelValue.modelId,
-    );
-    if (!entry) return true;
-    return entry.input?.includes("image") ?? false;
-  })();
-
   const onDrop = useCallback((files: File[]) => {
-    chatInputRef?.current?.addFiles(files);
+    chatInputRef?.current?.addImages(files);
   }, [chatInputRef]);
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
@@ -217,73 +166,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const currentThinkingLevelMap = displayModelValue
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
-  const currentCwd = session?.cwd ?? newSessionCwd ?? undefined;
-
-  const latestAssistantText = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg.role !== "assistant") continue;
-      return msg.content
-        .filter((block): block is TextContent => block.type === "text")
-        .map((block) => block.text)
-        .join("\n")
-        .trim();
-    }
-    return "";
-  })();
-  const lastResultSummary = useMemo(
-    () => summarizeForHistory(latestAssistantText, 120),
-    [latestAssistantText],
-  );
-  const lastResultSummaryRef = useRef(lastResultSummary);
-  lastResultSummaryRef.current = lastResultSummary;
-
-  const [slashCommands, setSlashCommands] = useState<SlashCommandEntry[]>([]);
-  const slashCommandsEnabled = true;
-  const activeSessionId = session?.id ?? sessionIdRef.current ?? null;
-
-  useEffect(() => {
-    if (!slashCommandsEnabled) {
-      setSlashCommands([]);
-      return;
-    }
-
-    // For new conversations, fetch skills directly from the skills API
-    if (isNew && newSessionCwd) {
-      void fetch(`/api/skills?cwd=${encodeURIComponent(newSessionCwd)}`)
-        .then((res) => res.json())
-        .then((data: { skills?: Array<{ name: string; description?: string }> }) => {
-          setSlashCommands((data.skills ?? []).map((skill) => ({
-            name: `skill:${skill.name}`,
-            description: skill.description,
-            source: "skill" as const,
-          })));
-        })
-        .catch(() => setSlashCommands([]));
-      return;
-    }
-
-    if (!activeSessionId) {
-      setSlashCommands([]);
-      return;
-    }
-    void fetch(`/api/agent/${encodeURIComponent(activeSessionId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "get_commands" }),
-    })
-      .then((res) => res.json())
-      .then((data: { data?: { commands?: SlashCommandEntry[] } }) => {
-        setSlashCommands(data.data?.commands ?? []);
-      })
-      .catch(() => setSlashCommands([]));
-  }, [activeSessionId, slashCommandsEnabled, modelsRefreshKey, isNew, newSessionCwd]);
-
-  const steerMode =
-    agentRunning &&
-    (streamState.isStreaming ||
-      agentPhase?.kind === "running_tools" ||
-      retryInfo != null);
 
   const chatInputElement = (
     <ChatInput
@@ -293,11 +175,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
       isStreaming={agentRunning}
-      steerMode={steerMode}
       model={displayModelValue}
       modelNames={modelNames}
       modelList={modelList}
-      supportsImages={supportsImages}
       onModelChange={handleModelChange}
       onCompact={session || isNew ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
@@ -305,8 +185,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       compactError={compactError}
       toolPreset={toolPreset}
       onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
-      toolMode={toolMode}
-      showAdvancedTools
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
@@ -314,13 +192,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       retryInfo={retryInfo}
       soundEnabled={soundEnabled}
       onSoundToggle={onSoundToggle}
-      onClone={session && !isNew ? handleClone : undefined}
-      cloning={cloning}
-      sessionId={activeSessionId}
-      slashCommandsEnabled={slashCommandsEnabled}
-      slashCommands={slashCommands}
-      onOpenSettings={onOpenSettings}
-      onOpenFile={onOpenFile}
     />
   );
 
@@ -334,11 +205,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   if (error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <div className="text-red-400">{remoteAuthError ? t("remoteAccess.authRequired") : error}</div>
-        {remoteAuthError && (
-          <div className="max-w-md text-[12px] leading-5 text-text-muted">{t("remoteAccess.pairingHint")}</div>
-        )}
+      <div className="flex h-full items-center justify-center text-red-400">
+        {error}
       </div>
     );
   }
@@ -351,25 +219,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {modelList.length === 0 && (
-        <div className="shrink-0 border-b border-border bg-bg-panel px-4 py-3">
-          <div className="mx-auto flex max-w-[820px] flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold text-text">{t("accounts.needAccountTitle")}</div>
-              <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("accounts.needAccountDescription")}</p>
-            </div>
-            {onOpenModels && (
-              <button
-                type="button"
-                onClick={onOpenModels}
-                className="rounded-[7px] bg-accent px-3 py-2 text-[12px] font-semibold text-white hover:bg-accent-hover"
-              >
-                {t("accounts.configureModels")}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[rgba(37,99,235,0.06)] backdrop-blur-[1px]">
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -406,33 +255,33 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
           <div className="w-full max-w-[820px]">
             <div
-                className="mb-3"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  marginLeft: 16,
-                  marginRight: 52,
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4 }}>
-                  <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0, color: "var(--text)" }}>π</span>
-                  <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0 }}>Pi-Agent</span>
-                  <span style={{ fontSize: 14, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                    <Typewriter phrases={TYPEWRITER_PHRASES} />
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
-                  </span>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
-                  </span>
-                </div>
+              className="mb-3"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                marginLeft: 16,
+                marginRight: 52,
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4, overflow: "hidden" }}>
+                <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0, color: "var(--text)", flexShrink: 0, whiteSpace: "nowrap" }}>π</span>
+                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0, flexShrink: 0, whiteSpace: "nowrap" }}>Pi Agent Web</span>
+                <span style={{ fontSize: 14, flex: "1 1 0", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", display: "block" }}>
+                  <Typewriter phrases={TYPEWRITER_PHRASES} />
+                </span>
               </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
+                </span>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
+                </span>
+              </div>
+            </div>
             {chatInputElement}
           </div>
         </div>
@@ -443,10 +292,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           <div className="mx-auto max-w-[820px] px-4">
 
             {(() => {
-              const toolResultsMap = new Map<string, ToolResultMessage>();
+              const toolResultsMap = new Map<string, import("@/lib/types").ToolResultMessage>();
               for (const msg of messages) {
                 if (msg.role === "toolResult") {
-                  toolResultsMap.set((msg as ToolResultMessage).toolCallId, msg as ToolResultMessage);
+                  toolResultsMap.set((msg as import("@/lib/types").ToolResultMessage).toolCallId, msg as import("@/lib/types").ToolResultMessage);
                 }
               }
               let lastUserIdx = -1;
@@ -486,10 +335,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     onNavigate={agentRunning ? undefined : handleNavigate}
                     prevAssistantEntryId={agentRunning ? undefined : prevAssistantEntryId}
                     onEditContent={(content) => chatInputRef?.current?.insertIfEmpty(content)}
-                    onOpenFile={onOpenFile}
-                    cwd={currentCwd}
                     showTimestamp={showTimestamp}
-                    prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
+                    prevTimestamp={idx > 0 ? (messages[idx - 1] as import("@/lib/types").AgentMessage & { timestamp?: number }).timestamp : undefined}
                   />
                 );
                 if (!isVisible) return view;
@@ -505,13 +352,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             })()}
 
             {streamState.isStreaming && streamState.streamingMessage && (
-              <MessageView
-                message={streamState.streamingMessage as AgentMessage}
-                isStreaming
-                modelNames={modelNames}
-                onOpenFile={onOpenFile}
-                cwd={currentCwd}
-              />
+              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} />
             )}
 
             {agentRunning && !streamState.streamingMessage && (

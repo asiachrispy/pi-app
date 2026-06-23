@@ -21,6 +21,7 @@ vi.mock("@/lib/session-reader", () => ({
 let tmpCwd: string;
 
 beforeEach(() => {
+  delete process.env.PI_WEB_TERMINAL_DISABLED;
   resetTerminalManagerForTests();
   _resetTerminalSettingsCache();
   tmpCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-state-"));
@@ -29,6 +30,16 @@ beforeEach(() => {
 });
 
 describe("GET /api/terminal/state/[...cwd]", () => {
+  it("returns 403 when terminal access is disabled by environment", async () => {
+    process.env.PI_WEB_TERMINAL_DISABLED = "1";
+    const { NextRequest } = await import("next/server");
+    const { GET } = await import("./route");
+    const req = new NextRequest(`http://localhost/api/terminal/state/${encodeURIComponent(tmpCwd)}`);
+    const res = await GET(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [tmpCwd] }) } as unknown as { params: Promise<{ cwd: string[] }> });
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({ error: "terminal_disabled" });
+  });
+
   it("returns 200 with empty buffer for a fresh cwd", async () => {
     const { NextRequest } = await import("next/server");
     const { GET } = await import("./route");

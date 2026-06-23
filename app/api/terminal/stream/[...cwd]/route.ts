@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getTerminalManager } from "@/lib/terminal/manager";
+import { rejectDisabledTerminal } from "@/lib/terminal/access";
 import type { TerminalEvent } from "@/lib/terminal/types";
 import { requireApiAuth } from "@/lib/api-auth";
 import { isPathAllowed, filePathFromSegments } from "@/lib/file-access";
@@ -41,6 +42,9 @@ export async function GET(
   request: NextRequest,
   ctx: { params: Promise<{ cwd: string[] }> },
 ) {
+  const disabled = rejectDisabledTerminal();
+  if (disabled) return disabled;
+
   const rejected = requireApiAuth(request);
   if (rejected) return rejected;
 
