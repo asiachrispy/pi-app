@@ -1,174 +1,150 @@
 # pi-app
 
-[pi 编程智能体](https://github.com/badlogic/pi-mono) 的网页界面。在浏览器中浏览会话、与智能体对话、分叉对话、切换消息分支。
+Web UI for the Pi AI coding agent.
 
-## 日常维护
+## Quick Navigation
 
-```
-cd ~/codespace/pi-app
+- ⚡ **New here?** → [Installation](#getting-started)
+- 🔧 **Already using pi CLI?** → [Integration](#already-a-pi-cli-user)
+- 💻 **Want to contribute?** → [Development](#development)
 
-# 拉社区更新
-git fetch upstream
-git log --oneline HEAD..upstream/main
-git merge upstream/main
-git push origin main
+## What is pi-app?
 
-# 日常开发
-git checkout -b feat/my-feature
-# ... 改 ...
-git commit -m "..."
-git push origin feat/my-feature
+Pi ecosystem has three components:
 
-```
+| Component | Role |
+|-----------|------|
+| **pi** | AI agent engine, CLI, multi-LLM support, tool invocation, session management |
+| **pi-app** (this repo) | Web frontend, macOS application, optional remote access |
+| **Your workflow** | Use via CLI (`pi`), browser, or desktop app — all connected to the same agent |
 
+**pi-app is the web UI and macOS shell for one local pi agent installation.** When you run pi-app, it reads sessions from `~/.pi/agent/` (same location as pi CLI) and displays them in the browser. Both tools operate on the same data.
 
-## 快速开始
+## Why pi-app?
 
-**无需安装，直接运行：**
+**Session Management** — Browse all conversations in one place, automatically grouped by working directory. Visualize, rename, and organize sessions.
+
+**Real-time Interaction** — Stream output, switch models mid-chat, fork conversations into branches, and manage tools without restarting.
+
+**Multi-platform** — Web (all browsers), macOS app, optional remote access. Local-first data storage with optional cloud sync.
+
+## Getting Started
+
+### I want to use pi-app
+
+**No installation needed:**
 
 ```bash
 npx pi-app@latest
 ```
 
-**或全局安装后使用：**
+Then open [http://localhost:30141](http://localhost:30141).
+
+**Or install globally:**
 
 ```bash
 npm install -g pi-app
 pi-app
 ```
 
-启动后打开 [http://localhost:30141](http://localhost:30141)。
-
-**一并提供 `pi` 命令行：**
-
-全局安装 pi-app 时会顺带提供 `pi` 命令（即 pi 编程智能体 CLI，与 pi-app 内置版本一致），无需单独安装：
+**Configuration:**
 
 ```bash
-npm install -g pi-app
-pi --help        # 直接使用 pi CLI
+pi-app --port 8080               # Custom port
+pi-app --hostname 127.0.0.1      # Localhost only
+pi-app --remote                  # Open to network
+PORT=8080 pi-app                 # Environment variable
 ```
 
-行为说明：
+**First time?** See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for detailed setup, troubleshooting, and configuration options.
 
-- 安装后仅当系统中**尚未存在** `pi` 命令时，才会创建 `pi`（一个转发到 pi-app 内置 CLI 的独立 shim）。
-- 若你已单独安装过 `pi`（如通过 `npm i -g @earendil-works/pi-coding-agent` 或 Homebrew），则**保留你已有的版本，不会覆盖**。
-- 卸载说明：npm **不会**执行卸载钩子（`postuninstall`），因此 `npm uninstall -g pi-app` 后这个 `pi` shim 会残留。它是独立 shim 而非失效软链——此时运行 `pi` 不会报「文件不存在」，而是友好提示你重新安装 pi-app 或删除该文件（提示里会给出确切路径）。如需立即清理，按提示删除该 `pi` 文件即可（不会影响你自行安装的其他 `pi`）。
+---
 
-**可选参数：**
+## Already a pi CLI user?
 
-```bash
-pi-app --port 8080               # 自定义端口
-pi-app --hostname 127.0.0.1      # 仅本机访问
-pi-app --remote                  # 开启远程访问并绑定 0.0.0.0
-pi-app -p 8080 -H 127.0.0.1     # 组合使用
+pi-app and pi CLI share the same sessions and models. When you start pi-app, all your existing CLI sessions appear in the browser UI.
 
-PORT=8080 pi-app                 # 也支持环境变量
-```
+**Setup:**
 
-> 安全提示：pi-app 会提供本地会话删除、模型配置和 API key 写入等接口。默认仅绑定 localhost。远程访问需显式开启（`--remote` 或 Settings → Remote access），并通过配对链接或 Bearer token 认证。详见 [docs/remote-access.md](docs/remote-access.md)。
+1. Ensure both pi and pi-app are installed
+2. Run `pi-app` to start the web server
+3. Open http://localhost:30141
+4. Your CLI sessions appear in the left sidebar
 
-## 功能介绍
+From the web UI, you can:
 
-- **会话浏览器** — 按工作目录分组展示所有 pi 会话
-- **实时对话** — 通过 SSE 流式输出与智能体实时交互
-- **会话分叉** — 从用户消息「从这里另开一版」创建独立 `.jsonl` 子会话
-- **复制为新对话** — 将当前分支整段复制为新的独立会话（Clone）
-- **会话内分支** — 回退到任意节点继续对话，在同一文件内创建分支
-- **分支导航器** — 可视化切换分支；可选「切换前先总结」
-- **整理摘要** — 自动/手动整理后在时间线显示可折叠的白话摘要块
-- **会话标题** — 侧栏重命名，顶栏与列表同步显示
-- **模型切换** — 对话中途随时切换模型
-- **工具面板** — 控制智能体可使用的工具
-- **压缩会话** — 对长会话进行摘要，节省上下文窗口
-- **引导 / 追加** — 打断正在运行的智能体，或在其完成后追加消息
+- Browse and organize sessions from different projects
+- Visualize conversation branches
+- Switch models mid-chat
+- Edit tool permissions
+- Create session notes and summaries
 
-## 注意事项
+**Learn more:** [docs/INTEGRATION_WITH_CLI.md](docs/INTEGRATION_WITH_CLI.md)
 
-- **数据目录** — 默认读取 `~/.pi/agent/sessions` 下的会话文件。可通过环境变量 `PI_CODING_AGENT_DIR` 指定其他目录（本地开发时见下方「端口与数据隔离」，勿写入 `.env.local`）。
-- **模型配置** — 从智能体数据目录下的 `models.json` 读取可用模型，可在侧边栏的「Models」面板中编辑。
-- **文件浏览** — 侧边栏内置文件浏览器，可在标签页中查看当前工作目录下的文件。
+---
 
-贯穿原则：[docs/product-principles.md](docs/product-principles.md)
+## Want to contribute?
 
-## 开发
+pi-app is a Next.js + TypeScript project. We welcome contributions:
+
+**Setup for development:**
 
 ```bash
+git clone https://github.com/asiachrispy/pi-app.git
+cd pi-app
 npm install
-npm run lint
-npm run test:run
+npm run dev          # http://localhost:30142 (dev server + hot reload)
+npm run build && npm start  # http://localhost:30141 (production)
 ```
 
-### 端口与数据隔离
+**Key principles:**
 
-**原则：30141 是你日常使用的服务；开发、改代码、跑测试只动 30142，不要影响 30141。**
+- Port 30141: daily use (production build)
+- Port 30142: development (hot reload, isolated data)
+- Run tests before submitting PRs: `npm run test:run`
 
-| 用途 | 端口 | 命令 | 数据目录 | 说明 |
-|------|------|------|----------|------|
-| **日常使用** | **30141** | `npm start` 或全局 `pi-web` | `~/.pi/agent/` | 稳定服务，不随源码热更新 |
-| **开发 / 测试** | **30142** | `npm run dev` | `~/tmp/pi-dev-agent/` | 改代码、试功能只用此端口 |
+**Project structure:** [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)  
+**Architecture overview:** [docs/DEVELOPMENT.md#architecture-overview](docs/DEVELOPMENT.md#architecture-overview)  
+**Contributing guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
 
-```bash
-# 30141 — 日常服务（先 build 一次，之后可长期开着）
-npm run build && npm start
+---
 
-# 30142 — 开发测试（与 30141 可同时运行）
-npm run dev
-```
+## Features
 
-### 让改动在 30141 上生效
+| Feature | What it does |
+|---------|--------------|
+| **Session Browser** | Browse all sessions grouped by working directory |
+| **Real-time Chat** | Stream output, mid-chat model switching, message editing |
+| **Session Forking** | Branch conversations at any point without losing original |
+| **Branch Navigator** | Visualize and switch between branches |
+| **File Browser** | Quick access to files in your working directory |
+| **Tool Panel** | Enable/disable agent tools per session |
+| **Session Summaries** | Auto or manual summaries for long conversations |
+| **Model Switching** | Change LLM without restarting |
+| **Remote Access** | Optional access from other devices (pairing link + token auth) |
 
-30141 使用 `next start`，读取仓库根目录的 `.next` 生产构建，**不会**像 30142 那样随保存自动热更新。在 30142 上验证通过的 UI/逻辑修复，要同步到日常端口必须：
+**Detailed feature guide:** [docs/FEATURES.md](docs/FEATURES.md)
 
-```bash
-npm run build
-# 若 30141 已在运行，先结束占用该端口的进程，再：
-npm start
-```
+---
 
-浏览器打开 [http://127.0.0.1:30141](http://127.0.0.1:30141) 后建议 **硬刷新**（Cmd+Shift+R），避免旧前端资源缓存。
+## Security & Privacy
 
-- **本仓库**：`npm start` 或 macOS [PiWorkbench](macos/README.md)（内嵌子进程连 `127.0.0.1:30141`）——在本目录 `build` 并重启即可。
-- **全局 `pi-web`**：需在该包的安装目录执行 `npm run build` 后再启动 CLI，否则仍是旧构建。
+**Local-first:** By default, pi-app binds to `localhost:30141`. All data stays on your machine.
 
-`npm run dev` 会设置 `PI_CODING_AGENT_DIR=~/tmp/pi-dev-agent`，并使用独立构建目录 `.next-dev-30142`，避免与 30141 抢锁、混数据。
+**Remote access:** Opt-in with `--remote` flag. Uses token-based authentication (no passwords). See [docs/remote-access.md](docs/remote-access.md).
 
-**不要在 30141 上跑 `next dev`**（包括 `npm run dev:prod`）：它与 30142 共用同一份源码，保存文件时两边都会热更新，开发中的半成品会直接打断你在 30141 上的使用。30141 请用 `npm start`（或已安装的 `pi-web`）。
+**Data directory:** Sessions stored in `~/.pi/agent/sessions/` by default. Change with `PI_CODING_AGENT_DIR` environment variable.
 
-**不要在 `.env.local` 里设置 `PI_CODING_AGENT_DIR`**：Next.js 会在所有模式下加载该文件，导致 30141 误读空的 dev 目录、会话「丢失」。数据目录隔离只写在 `npm run dev` 脚本里。
+---
 
-偶尔需要在真实数据上调试 HMR 时，可临时使用 `npm run dev:prod`（30141 + `~/.pi/agent/`），**不要与 `npm run dev` 同时开**。
+## Useful Links
 
-更多细节见 [AGENTS.md](AGENTS.md#dev--production-isolation)。
+- **Product philosophy:** [docs/product-principles.md](docs/product-principles.md)
+- **macOS app details:** [macos/README.md](macos/README.md)
+- **Historical context:** [Pi ecosystem overview](../README.md)
 
-### macOS App（M1 本机测试）
+---
 
-```bash
-npm run package:macos   # 产出 dist/macos/Pi.app（干净 .next + 生产依赖 + 内嵌 Node）
-rm -rf /Applications/Pi.app
-ditto dist/macos/Pi.app /Applications/Pi.app
-open /Applications/Pi.app
-```
+## License
 
-大体积请用 `ditto` 安装，勿用 `cp -R`（易超时/异常）。若无法打开：`xattr -cr /Applications/Pi.app`。
-
-详见 [macos/README.md](macos/README.md)。
-
-## 项目结构
-
-```
-app/
-  api/
-    sessions/      # 读写会话文件
-    agent/         # 发送命令、SSE 事件流
-    files/         # 文件内容读取
-    models/        # 可用模型列表与默认模型
-    models-config/ # 读写 models.json
-components/        # UI 组件
-lib/
-  session-reader.ts  # 解析 .jsonl 会话文件
-  rpc-manager.ts     # 管理 AgentSession 生命周期
-  normalize.ts       # 规范化 toolCall 字段名
-  types.ts
-```
-
-会话文件存储路径：`~/.pi/agent/sessions/<编码后的工作目录>/<时间戳>_<uuid>.jsonl`
+MIT
