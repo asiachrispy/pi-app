@@ -29,6 +29,6 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           PKG=$(node -e "process.stdout.write(require('./package.json').version)")
           [ "$TAG" = "$PKG" ] || { echo "tag v$TAG != package.json $PKG"; exit 1; }
-      - run: npm publish --provenance --access public
+      - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
