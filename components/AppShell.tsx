@@ -644,8 +644,6 @@ export function AppShell() {
                   tree={branchTree}
                   activeLeafId={branchActiveLeafId}
                   onLeafChange={handleBranchLeafChange}
-                  gitBranch={gitBranch}
-                  branchNavigating={branchNavigating}
                   inline
                   containerRef={topBarRef}
                   open={activeTopPanel === "branches"}
@@ -767,14 +765,10 @@ export function AppShell() {
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}
-              onBranchNavigatingChange={setBranchNavigating}
+
               onSystemPromptChange={handleSystemPromptChange}
               onSessionStatsChange={handleSessionStatsChange}
               onContextUsageChange={handleContextUsageChange}
-              toolMode={toolMode}
-              onOpenModels={handleOpenModelsConfig}
-              onOpenSettings={handleOpenSettingsView}
-              onOpenFile={handleOpenFile}
             />
           ) : showPlaceholder ? (
             workbenchView === "settings" ? (
