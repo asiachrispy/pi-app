@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo, type CSSProperties } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
@@ -33,6 +33,7 @@ import {
 } from "@/lib/file-preview";
 import { resolveFilePathForOpen } from "@/lib/file-paths";
 import { cachePiWebPreferences } from "@/lib/pi-web-preferences-cache";
+import { workbenchPath, workbenchSessionPath } from "@/lib/workbench-url";
 import {
   usePanelResize,
   MIN_LEFT_SIDEBAR_WIDTH,
@@ -46,6 +47,7 @@ const DRAG_OVERLAY_Z_INDEX = 1000;
 
 export function AppShell() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isDark, toggleTheme } = useTheme();
   const { t: i18nT } = useI18n();
@@ -255,8 +257,8 @@ export function AppShell() {
     // handleSessionCreated reflects the correct cwd-filtered tree.
     setRefreshKey((k) => k + 1);
     resetChatChrome();
-    router.replace("/", { scroll: false });
-  }, [resetChatChrome, router]);
+    router.replace(workbenchPath(pathname), { scroll: false });
+  }, [pathname, resetChatChrome, router]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setNewSessionCwd(null);
@@ -274,9 +276,9 @@ export function AppShell() {
     // Skip router.replace when restoring from URL — the param is already correct
     // and calling replace in production Next.js triggers a Suspense remount loop
     if (!isRestore) {
-      router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+      router.replace(workbenchSessionPath(pathname, session.id), { scroll: false });
     }
-  }, [router]);
+  }, [pathname, router]);
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
     setSelectedSession(null);
@@ -284,8 +286,8 @@ export function AppShell() {
     setWorkbenchView("chat");
     setSessionKey((k) => k + 1);
     resetChatChrome();
-    router.replace("/", { scroll: false });
-  }, [resetChatChrome, router]);
+    router.replace(workbenchPath(pathname), { scroll: false });
+  }, [pathname, resetChatChrome, router]);
 
   const handleStartChat = useCallback(async () => {
     setStartingChat(true);
@@ -297,7 +299,7 @@ export function AppShell() {
       setWorkbenchView("chat");
       setSessionKey((k) => k + 1);
       resetChatChrome();
-      router.replace("/", { scroll: false });
+      router.replace(workbenchPath(pathname), { scroll: false });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setStartChatError(
@@ -308,7 +310,7 @@ export function AppShell() {
     } finally {
       setStartingChat(false);
     }
-  }, [ensureWorkbenchCwd, i18nT, resetChatChrome, router]);
+  }, [ensureWorkbenchCwd, i18nT, pathname, resetChatChrome, router]);
 
   // Called by ChatWindow when a new session gets its real id from pi
   const sessionRefreshTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
@@ -316,7 +318,7 @@ export function AppShell() {
     setNewSessionCwd(null);
     setSelectedSession(session);
     setRefreshKey((k) => k + 1);
-    router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+    router.replace(workbenchSessionPath(pathname, session.id), { scroll: false });
     // Re-trigger the sidebar refresh after the session file is fully
     // persisted. The first refresh may race the prompt write, leaving the
     // sidebar with messageCount=0 and a "(no messages)" placeholder title.
@@ -327,7 +329,7 @@ export function AppShell() {
       setRefreshKey((k) => k + 1);
     }, 600);
     sessionRefreshTimersRef.current.add(t);
-  }, [router]);
+  }, [pathname, router]);
   useEffect(() => {
     const timers = sessionRefreshTimersRef.current;
     return () => {
@@ -360,16 +362,16 @@ export function AppShell() {
         id: newSessionId,
       }));
     }
-    router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
-  }, [router]);
+    router.replace(workbenchSessionPath(pathname, newSessionId), { scroll: false });
+  }, [pathname, router]);
 
   const handleInitialRestoreDone = useCallback((found: boolean) => {
     setInitialSessionRestored(true);
     if (!found) {
-      router.replace("/", { scroll: false });
+      router.replace(workbenchPath(pathname), { scroll: false });
       setSessionRestoreNotice(i18nT("appShell.sessionNotFound"));
     }
-  }, [router, i18nT]);
+  }, [pathname, router, i18nT]);
 
   const handleSessionDeleted = useCallback((sessionId: string) => {
     setRefreshKey((k) => k + 1);
@@ -380,9 +382,9 @@ export function AppShell() {
       setWorkbenchView("chat");
       setSessionKey((k) => k + 1);
       resetChatChrome();
-      router.replace("/", { scroll: false });
+      router.replace(workbenchPath(pathname), { scroll: false });
     }
-  }, [resetChatChrome, selectedSession, router]);
+  }, [pathname, resetChatChrome, selectedSession, router]);
 
   const handleOpenHome = useCallback(() => {
     setStartChatError(null);
@@ -392,8 +394,8 @@ export function AppShell() {
     setWorkbenchView("home");
     setSessionKey((k) => k + 1);
     resetChatChrome();
-    router.replace("/", { scroll: false });
-  }, [resetChatChrome, router]);
+    router.replace(workbenchPath(pathname), { scroll: false });
+  }, [pathname, resetChatChrome, router]);
 
   const handleOpenSettingsView = useCallback(() => {
     setSelectedSession(null);
@@ -401,8 +403,8 @@ export function AppShell() {
     setWorkbenchView("settings");
     setSessionKey((k) => k + 1);
     resetChatChrome();
-    router.replace("/", { scroll: false });
-  }, [resetChatChrome, router]);
+    router.replace(workbenchPath(pathname), { scroll: false });
+  }, [pathname, resetChatChrome, router]);
 
   const handleOpenModelsConfig = useCallback(() => {
     setModelsConfigOpen(true);
@@ -425,8 +427,8 @@ export function AppShell() {
     setWorkbenchView("chat");
     setSessionKey((k) => k + 1);
     resetChatChrome();
-    router.replace(`?session=${encodeURIComponent(item.sessionId)}`, { scroll: false });
-  }, [resetChatChrome, router]);
+    router.replace(workbenchSessionPath(pathname, item.sessionId), { scroll: false });
+  }, [pathname, resetChatChrome, router]);
 
   const handleOpenFile = useCallback((filePath: string, fileName: string) => {
     const baseCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd ?? null;
@@ -478,9 +480,9 @@ export function AppShell() {
       setSessionKey((k) => k + 1);
       resetChatChrome();
       setModelsConfigOpen(true);
-      router.replace("/?view=settings", { scroll: false });
+      router.replace(workbenchPath(pathname, "?view=settings"), { scroll: false });
     }
-  }, [resetChatChrome, router, searchParams]);
+  }, [pathname, resetChatChrome, router, searchParams]);
 
   const sidebarContent = (
     <>

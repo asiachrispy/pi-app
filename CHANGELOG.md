@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **子路径部署导航**：`/app/` 下的设置、首页、新建对话等内部导航保留当前 workbench pathname，避免跳到站点根路径 `https://pi.gottao.com/`。
+
 ## [0.8.11] - 2026-06-20
 
 **Bundle:** `0.8.11p0.79.9` (pi-app + `@livos/pi-coding-agent`)
