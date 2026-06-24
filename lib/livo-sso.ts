@@ -1,7 +1,9 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { getAgentDir } from "@/lib/agent-dir";
+import { getNamedCookie } from "@/lib/middleware-auth";
+import { issueSessionCookieValue, parseSessionCookieValue } from "@/lib/signed-session-cookie";
 
 export const LIVO_SESSION_COOKIE_NAME = "pi_livo_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -28,16 +30,6 @@ function secret(): string {
   return value;
 }
 
-function hmac(value: string): string {
-  return createHmac("sha256", secret()).update(value).digest("base64url");
-}
-
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && timingSafeEqual(ab, bb);
-}
-
 function readStore(): Record<string, StoredLivoSession> {
   try {
     return JSON.parse(readFileSync(sessionStorePath(), "utf8")) as Record<string, StoredLivoSession>;
@@ -50,18 +42,6 @@ function writeStore(store: Record<string, StoredLivoSession>): void {
   const file = sessionStorePath();
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(store, null, 2));
-}
-
-export function getNamedCookie(req: Request, name: string): string | null {
-  const header = req.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const trimmed = part.trim();
-    if (trimmed.startsWith(`${name}=`)) {
-      return decodeURIComponent(trimmed.slice(name.length + 1));
-    }
-  }
-  return null;
 }
 
 export function normalizePiReturnTo(value: string | null | undefined): string {
@@ -81,30 +61,24 @@ export function normalizePiReturnTo(value: string | null | undefined): string {
 export function createLivoSession(user: LivoSessionUser): { cookieValue: string; expiresAt: Date } {
   const sid = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  const sidHash = hmac(sid);
+  const sessionSecret = secret();
   const store = readStore();
-  store[sidHash] = {
+  store[sid] = {
     ...user,
-    sidHash,
+    sidHash: sid,
     createdAt: new Date().toISOString(),
     expiresAt: expiresAt.toISOString(),
   };
   writeStore(store);
-  const payload = `${sid}.${expiresAt.getTime()}`;
-  return { cookieValue: `${payload}.${hmac(payload)}`, expiresAt };
+  return { cookieValue: issueSessionCookieValue(sid, expiresAt.getTime(), sessionSecret), expiresAt };
 }
 
 export function readLivoSession(req: Request): StoredLivoSession | null {
   const value = getNamedCookie(req, LIVO_SESSION_COOKIE_NAME);
   if (!value) return null;
-  const parts = value.split(".");
-  if (parts.length !== 3) return null;
-  const [sid, expiresRaw, signature] = parts;
-  const payload = `${sid}.${expiresRaw}`;
-  if (!safeEqual(hmac(payload), signature)) return null;
-  const expiresAtMs = Number(expiresRaw);
-  if (!Number.isFinite(expiresAtMs) || Date.now() > expiresAtMs) return null;
-  const stored = readStore()[hmac(sid)];
+  const parsed = parseSessionCookieValue(value, secret());
+  if (!parsed) return null;
+  const stored = readStore()[parsed.sessionId];
   if (!stored || Date.parse(stored.expiresAt) <= Date.now()) return null;
   return stored;
 }

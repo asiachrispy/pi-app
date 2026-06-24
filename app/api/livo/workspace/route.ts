@@ -1,6 +1,6 @@
 import { mkdirSync } from "fs";
 import { homedir } from "os";
-import { isAbsolute, join, relative, resolve } from "path";
+import { join, resolve } from "path";
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
@@ -18,11 +18,6 @@ function safeSegment(value: unknown, field: string): string | NextResponse {
   return value;
 }
 
-function isInside(parent: string, child: string): boolean {
-  const rel = relative(parent, child);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
 // POST /api/livo/workspace  body: { userId: string; meetingId: string }
 // Creates the narrow Livo workspace used by server-to-server Livo dispatch.
 export async function POST(req: Request) {
@@ -38,10 +33,6 @@ export async function POST(req: Request) {
 
     const root = livoRoot();
     const cwd = resolve(root, "users", userId, "meetings", meetingId);
-    if (!isInside(root, cwd)) {
-      return NextResponse.json({ error: "Workspace escapes Livo root" }, { status: 400 });
-    }
-
     mkdirSync(cwd, { recursive: true });
     invalidateAllowedRootsCache();
     return NextResponse.json({ success: true, cwd });
