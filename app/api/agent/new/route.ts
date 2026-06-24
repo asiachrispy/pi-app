@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
+import { notifyLivoPiStatus } from "@/lib/livo-status-callback";
 
 // POST /api/agent/new  body: { cwd: string; type: string; message: string; ... }
 // Spawns a brand-new pi session and immediately sends the first command.
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json() as { cwd?: string; [key: string]: unknown };
-    const { cwd, ...command } = body;
+    const { cwd, livoUserId, livoMeetingId, ...command } = body;
 
     if (!cwd || typeof cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
@@ -42,7 +43,26 @@ export async function POST(req: Request) {
       await session.send({ type: "set_thinking_level", level: thinkingLevel });
     }
 
-    const result = await session.send(promptCommand);
+    let result: unknown;
+    try {
+      result = await session.send(promptCommand);
+    } catch (error) {
+      await notifyLivoPiStatus({
+        userId: livoUserId,
+        meetingId: livoMeetingId,
+        piSessionId: realSessionId,
+        status: "failed",
+        message: String(error),
+      });
+      throw error;
+    }
+
+    await notifyLivoPiStatus({
+      userId: livoUserId,
+      meetingId: livoMeetingId,
+      piSessionId: realSessionId,
+      status: "running",
+    });
 
     return NextResponse.json({ success: true, sessionId: realSessionId, data: result });
   } catch (error) {
