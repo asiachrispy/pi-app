@@ -76,6 +76,23 @@ describe("remote auth", () => {
     expect(authorizeRequest(req).authorized).toBe(true);
   });
 
+  it("accepts livo sso cookie when enabled", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "1");
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", "test-secret-32-byte-minimum-value");
+    const { createLivoSession } = await import("./livo-sso");
+    const session = createLivoSession({ livoUserId: "user-1" });
+    const { authorizeRequest } = await import("./remote-auth");
+    const req = new Request("http://192.168.1.10:30141/api/sessions", {
+      headers: {
+        host: "192.168.1.10:30141",
+        cookie: `pi_livo_session=${encodeURIComponent(session.cookieValue)}`,
+      },
+    });
+
+    expect(authorizeRequest(req).authorized).toBe(true);
+  });
+
   it("blocks mutations in read-only mode", async () => {
     const { enableRemoteAccess, authorizeRequest } = await import("./remote-auth");
     const { masterToken } = enableRemoteAccess({ readOnly: true });

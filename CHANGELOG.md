@@ -2,8 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+- **Livo SSO 工作台登录**：新增 `/api/livo/sso/start`、`/api/livo/sso/callback`、`/api/livo/me`、`/api/livo/logout` 与 `pi_livo_session` HttpOnly cookie；用户访问 `pi.gottao.com/app/` 未登录时跳 Livo，校验一次性 ticket 后回到 `/app/` 或 `/app/?session=...`。
+- **Livo workspace 初始化 API**：新增 `/api/livo/workspace`，仅允许 server token 创建 `PI_WEB_LIVO_WORKSPACE_ROOT` 下的用户会议工作区。
+
+### Changed
+- **Livo 用户数据隔离**：`/api/sessions`、`/api/sessions/[id]` 与 `/api/default-cwd` 根据当前 Livo userId 过滤或生成 workspace；server-to-server `PI_WEB_REMOTE_TOKEN` 继续保留给 Livo 后端派发任务。
+
 ### Fixed
 - **子路径部署导航**：`/app/` 下的设置、首页、新建对话等内部导航保留当前 workbench pathname，避免跳到站点根路径 `https://pi.gottao.com/`。
+- **工作台入口回跳**：`/app?session=...` 规范化为 `/app/?session=...` 并保留 query；根路径 `https://pi.gottao.com/` 不再被 Pi Web 抢占，继续作为产品介绍页。
 
 ## [0.8.11] - 2026-06-20
 

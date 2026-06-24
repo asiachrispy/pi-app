@@ -5,6 +5,7 @@ import { buildConnectionOffer, buildOfferUrl } from "./pi-relay/connection-offer
 import { generateRelayKeyPair } from "./pi-relay/crypto";
 import { DEFAULT_RELAY_ENDPOINT } from "./pi-relay/types";
 import { appendRemoteAuditEvent, getClientIp } from "./remote-audit-log";
+import { readLivoSession } from "./livo-sso";
 import {
   PAIRING_CODE_TTL_MS,
   SESSION_COOKIE_NAME,
@@ -237,6 +238,17 @@ export function authorizeRequestEdge(req: Request): RequestAuthContext {
     };
   }
 
+  if (process.env.PI_LIVO_SSO_ENABLED === "1" && readLivoSession(req)) {
+    return {
+      authorized: true,
+      loopback,
+      remoteEnabled: true,
+      sessionId: null,
+      readOnly: false,
+      reason: null,
+    };
+  }
+
   if (process.env.PI_WEB_ALLOW_REMOTE_MUTATIONS === "1") {
     return {
       authorized: true,
@@ -348,6 +360,17 @@ export function authorizeRequest(req: Request): RequestAuthContext {
         reason: null,
       };
     }
+  }
+
+  if (process.env.PI_LIVO_SSO_ENABLED === "1" && readLivoSession(req)) {
+    return {
+      authorized: true,
+      loopback,
+      remoteEnabled: true,
+      sessionId: null,
+      readOnly: false,
+      reason: null,
+    };
   }
 
   return {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authorizeMiddlewareRequest, getSessionCookie, isRemoteAccessEnabledEnv } from "./lib/middleware-auth";
+import { authorizeMiddlewareRequest, getNamedCookie, getSessionCookie, isRemoteAccessEnabledEnv } from "./lib/middleware-auth";
 
 function isPublicSharePath(pathname: string): boolean {
   return pathname === "/api/share" || pathname.startsWith("/api/share/");
@@ -16,6 +16,9 @@ function isPublicApiRequest(pathname: string, method: string): boolean {
   if (pathname === "/api/remote/client" || pathname === "/api/health") {
     return method === "GET" || method === "HEAD" || method === "OPTIONS";
   }
+  if (pathname === "/api/livo/sso/start" || pathname === "/api/livo/sso/callback") {
+    return method === "GET" || method === "HEAD" || method === "OPTIONS";
+  }
   return false;
 }
 
@@ -29,6 +32,21 @@ function forbidden(reason: string): NextResponse {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isAppEntry = pathname === "/app" || pathname === "/app/" || (
+    pathname === "/" && request.headers.get("x-pi-workbench-entry") === "/app"
+  );
+  if (process.env.PI_LIVO_SSO_ENABLED === "1" && isAppEntry) {
+    if (!getNamedCookie(request, "pi_livo_session")) {
+      const start = new URL("/api/livo/sso/start", request.url);
+      const appPath = pathname === "/app" || request.headers.get("x-pi-workbench-entry") === "/app"
+        ? "/app/"
+        : pathname;
+      start.searchParams.set("returnTo", `${appPath}${request.nextUrl.search}`);
+      return NextResponse.redirect(start);
+    }
+    return NextResponse.next();
+  }
+
   if (!pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
@@ -43,6 +61,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
   if (getSessionCookie(request)) {
+    return NextResponse.next();
+  }
+  if (getNamedCookie(request, "pi_livo_session")) {
     return NextResponse.next();
   }
 
@@ -62,5 +83,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: ["/", "/app", "/app/", "/api/:path*"],
 };

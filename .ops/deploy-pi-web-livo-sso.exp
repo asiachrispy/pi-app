@@ -1,0 +1,43 @@
+source [file join [file dirname [info script]] _common.exp]
+
+set timeout 7200
+set release_tar "/tmp/pi-app-runtime-livo-sso.tgz"
+set remote_tar "/tmp/pi-app-runtime-livo-sso.tgz"
+set token_file "/tmp/pi_livo_remote_token.txt"
+set sso_token_file "/tmp/pi_livo_sso_verify_token.txt"
+set session_secret_file "/tmp/pi_livo_session_secret.txt"
+set remote_token "/tmp/pi-web-remote-token"
+set remote_sso_token "/tmp/pi-web-livo-sso-token"
+set remote_session_secret "/tmp/pi-web-livo-session-secret"
+
+if {![file exists $release_tar]} {
+    send_user "Missing release tar: $release_tar\n"
+    exit 1
+}
+if {![file exists $token_file]} {
+    send_user "Missing Pi remote token file: $token_file\n"
+    exit 1
+}
+if {![file exists $sso_token_file]} {
+    send_user "Missing Pi SSO token file: $sso_token_file\n"
+    exit 1
+}
+if {![file exists $session_secret_file]} {
+    send_user "Missing Pi Livo session secret file: $session_secret_file\n"
+    exit 1
+}
+
+ops_scp $release_tar $remote_tar 7200
+ops_scp $token_file $remote_token 180
+ops_scp $sso_token_file $remote_sso_token 180
+ops_scp $session_secret_file $remote_session_secret 180
+
+set remote_cmd "set -e; sudo -S bash -lc 'set -e; ts=\$(date +%Y%m%d%H%M%S); release=/opt/pi-agent/releases/pi-app-runtime-livo-sso-\$ts; mkdir -p \"\$release\"; tar -xzf $remote_tar -C \"\$release\"; chown -R root:root \"\$release\"; chmod -R a+rX \"\$release\"; rm -f $remote_tar; service=/etc/systemd/system/pi-agent-web.service; cp \"\$service\" \"\$service.bak.\$ts\"; TOKEN=\$(cat $remote_token); SSO_TOKEN=\$(cat $remote_sso_token); SESSION_SECRET=\$(cat $remote_session_secret); rm -f $remote_token $remote_sso_token $remote_session_secret; upsert_env() { key=\"\$1\"; value=\"\$2\"; if grep -q \"^Environment=\${key}=\" \"\$service\"; then sed -i \"s|^Environment=\${key}=.*|Environment=\${key}=\${value}|\" \"\$service\"; else sed -i \"/^Environment=PI_WEB_REMOTE=/a Environment=\${key}=\${value}\" \"\$service\"; fi; }; upsert_env PI_WEB_REMOTE 1; upsert_env PI_WEB_REMOTE_TOKEN \"\$TOKEN\"; upsert_env PI_WEB_LIVO_WORKSPACE_ROOT /data/pi-agent/workspaces/livo; upsert_env PI_WEB_TERMINAL_DISABLED 1; upsert_env PI_LIVO_SSO_ENABLED 1; upsert_env PI_LIVO_BASE_URL https://livo.gottao.com/livoApi/livoAgent; upsert_env PI_LIVO_WEB_LOGIN_URL https://livo.gottao.com/auth/login; upsert_env PI_LIVO_SSO_VERIFY_TOKEN \"\$SSO_TOKEN\"; upsert_env PI_LIVO_SESSION_SECRET \"\$SESSION_SECRET\"; upsert_env PI_PUBLIC_ORIGIN https://pi.gottao.com; sed -i \"/^Environment=PI_WEB_ALLOW_REMOTE_MUTATIONS=/d\" \"\$service\"; ln -sfn \"\$release\" /opt/pi-agent/pi-app-current; systemctl daemon-reload; systemctl restart pi-agent-web; sleep 5; systemctl is-active --quiet pi-agent-web; curl -sS -m 10 -o /dev/null -w \"PI_LOCAL_HEALTH:%{http_code}\\n\" http://127.0.0.1:30141/api/health; echo PI_WEB_DEPLOY_OK:\$ts'"
+
+spawn ssh -tt -o StrictHostKeyChecking=no $host $remote_cmd
+expect {
+    -re ".*yes/no.*" { send "yes\r"; exp_continue }
+    -re ".*password.*" { send "$password\r"; exp_continue }
+    timeout { send_user "SSH TIMEOUT\n"; exit 1 }
+    eof
+}

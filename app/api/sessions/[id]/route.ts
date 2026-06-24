@@ -11,6 +11,7 @@ import {
 import { getRpcSession } from "@/lib/rpc-manager";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { readProductSessionMetadataMap } from "@/lib/scene-metadata";
+import { cwdBelongsToLivoUser, readLivoSession } from "@/lib/livo-sso";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
@@ -112,6 +113,13 @@ function projectTreeForResponse<T extends { entry: { id: string }; children: T[]
   return projectedRoots;
 }
 
+function rejectLivoSessionOutsideWorkspace(req: Request, cwd: string | null | undefined): NextResponse | null {
+  const livoSession = readLivoSession(req);
+  if (!livoSession) return null;
+  if (cwdBelongsToLivoUser(cwd, livoSession.livoUserId)) return null;
+  return NextResponse.json({ error: "Session is outside current Livo workspace" }, { status: 403 });
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -127,12 +135,15 @@ export async function GET(
     }
 
     const sm = SessionManager.open(filePath);
+    const header = sm.getHeader();
+    const rejectedByOwner = rejectLivoSessionOutsideWorkspace(req, header?.cwd);
+    if (rejectedByOwner) return rejectedByOwner;
+
     const entries = sm.getEntries() as never;
     const leafId = sm.getLeafId();
     const tree = projectTreeForResponse(sm.getTree());
     const context = buildSessionContext(entries, leafId);
 
-    const header = sm.getHeader();
     let modified = header?.timestamp ?? new Date().toISOString();
     try { modified = statSync(filePath).mtime.toISOString(); } catch { /* use header timestamp */ }
     const allSessions = await listAllSessions();
@@ -204,6 +215,9 @@ export async function PATCH(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
     const sm = SessionManager.open(filePath);
+    const ownerRejected = rejectLivoSessionOutsideWorkspace(req, sm.getHeader()?.cwd);
+    if (ownerRejected) return ownerRejected;
+
     sm.appendSessionInfo(name.trim());
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -226,13 +240,26 @@ export async function DELETE(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
+    try {
+      const sm = SessionManager.open(filePath);
+      const ownerRejected = rejectLivoSessionOutsideWorkspace(req, sm.getHeader()?.cwd);
+      if (ownerRejected) return ownerRejected;
+    } catch {
+      // Keep the existing delete error behavior for malformed or unreadable files.
+    }
+
     // Read header before deleting to get parentSession path
     const firstLine = readFileSync(filePath, "utf8").split("\n")[0];
     let parentSessionPath: string | undefined;
+    let cwd: string | undefined;
     try {
-      const header = JSON.parse(firstLine) as { type?: string; parentSession?: string };
+      const header = JSON.parse(firstLine) as { type?: string; parentSession?: string; cwd?: string };
       if (header.type === "session") parentSessionPath = header.parentSession;
+      cwd = header.cwd;
     } catch { /* ignore */ }
+
+    const ownerRejected = rejectLivoSessionOutsideWorkspace(req, cwd);
+    if (ownerRejected) return ownerRejected;
 
     // Re-attach all direct children to this session's parent (cascade re-parent)
     // Scan sibling files in the same directory

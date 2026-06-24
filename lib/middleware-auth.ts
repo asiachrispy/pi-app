@@ -44,12 +44,16 @@ export function isSameOriginLoopbackRequest(req: Request): boolean {
 }
 
 export function getSessionCookie(req: Request): string | null {
+  return getNamedCookie(req, SESSION_COOKIE_NAME);
+}
+
+export function getNamedCookie(req: Request, name: string): string | null {
   const header = req.headers.get("cookie");
   if (!header) return null;
   for (const part of header.split(";")) {
     const trimmed = part.trim();
-    if (trimmed.startsWith(`${SESSION_COOKIE_NAME}=`)) {
-      return decodeURIComponent(trimmed.slice(SESSION_COOKIE_NAME.length + 1));
+    if (trimmed.startsWith(`${name}=`)) {
+      return decodeURIComponent(trimmed.slice(name.length + 1));
     }
   }
   return null;
@@ -126,6 +130,10 @@ export async function authorizeMiddlewareRequest(req: Request): Promise<Middlewa
   const envToken = process.env.PI_WEB_REMOTE_TOKEN;
   const bearer = getBearerToken(req);
   if (envToken && bearer && timingSafeEqualString(bearer, envToken)) {
+    return { authorized: true, loopback, remoteEnabled: true, readOnly, reason: null };
+  }
+
+  if (process.env.PI_LIVO_SSO_ENABLED === "1" && getNamedCookie(req, "pi_livo_session")) {
     return { authorized: true, loopback, remoteEnabled: true, readOnly, reason: null };
   }
 

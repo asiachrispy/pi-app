@@ -71,6 +71,22 @@ describe("middleware auth policy", () => {
     expect(middlewareAuth.authorized).toBe(true);
   });
 
+  it("allows livo sso cookie through middleware when enabled", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "1");
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    const req = new Request("http://192.168.1.5:30141/api/sessions", {
+      headers: {
+        host: "192.168.1.5:30141",
+        cookie: "pi_livo_session=opaque",
+      },
+    });
+    const { authorizeMiddlewareRequest } = await import("./middleware-auth");
+
+    const auth = await authorizeMiddlewareRequest(req);
+
+    expect(auth.authorized).toBe(true);
+  });
+
   it("blocks mutations for read-only remote clients", async () => {
     const { authorizeRequest, enableRemoteAccess, isAuthorizedForRequest } = await import("./remote-auth");
     const { masterToken } = enableRemoteAccess({ readOnly: true });

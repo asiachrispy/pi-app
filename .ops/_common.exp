@@ -1,0 +1,78 @@
+# Shared config for pi-app deployment expect scripts.
+# Credentials: copy ../../livo-opc/livo-backend/.ops/.env style values here,
+# or export OPS_SSH_HOST / OPS_SSH_PASSWORD in the environment.
+
+proc ops_ops_dir {} {
+    return [file dirname [info script]]
+}
+
+proc ops_load_env {} {
+    set candidates [list \
+        [file join [ops_ops_dir] .env] \
+        "/Users/mk/codespace/livo-opc/livo-backend/.ops/.env" \
+    ]
+    foreach env_file $candidates {
+        if {![file exists $env_file]} {
+            continue
+        }
+        set fp [open $env_file r]
+        set content [read $fp]
+        close $fp
+        foreach line [split $content "\n"] {
+            set line [string trim $line]
+            if {$line eq "" || [string match "#*" $line]} {
+                continue
+            }
+            if {![regexp {^([A-Za-z_][A-Za-z0-9_]*)=(.*)$} $line -> key value]} {
+                continue
+            }
+            regsub {^["']} $value "" value
+            regsub {["']$} $value "" value
+            set ::env($key) $value
+        }
+    }
+}
+
+proc ops_env_or_default {name default_value} {
+    if {[info exists ::env($name)] && $::env($name) ne ""} {
+        return $::env($name)
+    }
+    return $default_value
+}
+
+proc ops_require_password {} {
+    global password
+    set password [ops_env_or_default OPS_SSH_PASSWORD ""]
+    if {$password eq ""} {
+        send_user "Missing OPS_SSH_PASSWORD.\n"
+        exit 1
+    }
+}
+
+ops_load_env
+ops_require_password
+set host [ops_env_or_default OPS_SSH_HOST "ubuntu@43.138.130.199"]
+
+proc ops_scp {local_path remote_path {timeout_sec 300}} {
+    global password host
+    set timeout $timeout_sec
+    spawn scp -o StrictHostKeyChecking=no $local_path ${host}:$remote_path
+    expect {
+        -re ".*yes/no.*" { send "yes\r"; exp_continue }
+        -re ".*password:.*" { send "$password\r"; exp_continue }
+        timeout { send_user "SCP TIMEOUT\n"; exit 1 }
+        eof
+    }
+}
+
+proc ops_ssh {remote_cmd {timeout_sec 300}} {
+    global password host
+    set timeout $timeout_sec
+    spawn ssh -tt -o StrictHostKeyChecking=no $host $remote_cmd
+    expect {
+        -re ".*yes/no.*" { send "yes\r"; exp_continue }
+        -re ".*password:.*" { send "$password\r"; exp_continue }
+        timeout { send_user "SSH TIMEOUT\n"; exit 1 }
+        eof
+    }
+}

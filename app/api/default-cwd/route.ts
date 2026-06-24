@@ -3,6 +3,7 @@ import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
+import { livoUserWorkspaceRoot, readLivoSession } from "@/lib/livo-sso";
 
 // POST /api/default-cwd
 // Creates ~/pi-cwd-<YYYYMMDD> if it doesn't exist and returns the path.
@@ -11,6 +12,13 @@ export async function POST(req: Request) {
   if (rejected) return rejected;
 
   try {
+    const livoSession = readLivoSession(req);
+    if (livoSession) {
+      const dir = join(livoUserWorkspaceRoot(livoSession.livoUserId), "default");
+      mkdirSync(dir, { recursive: true });
+      return NextResponse.json({ cwd: dir });
+    }
+
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const dir = join(homedir(), `pi-cwd-${date}`);
     mkdirSync(dir, { recursive: true });
