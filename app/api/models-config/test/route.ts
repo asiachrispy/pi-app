@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai";
+import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai/compat";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { requireApiAuth } from "@/lib/api-auth";
 import { isChatTestableModelId, normalizeModelEntry, normalizeProviderEntry, isReasoningEffortUnsupportedError } from "@/lib/models-config-normalize";
