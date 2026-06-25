@@ -279,7 +279,7 @@ export const DELETE = withTenant(async (
 
     getRpcSession(id)?.destroy();
     unlinkSync(filePath);
-    invalidateSessionPathCache(id);
+    invalidateSessionPathCache(id, currentAgentDir());
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

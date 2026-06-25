@@ -149,7 +149,7 @@ export class AgentSessionWrapper {
         }
 
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
-        cacheSessionPath(newSessionId, newSessionFile);
+        cacheSessionPath(newSessionId, newSessionFile, currentAgentDir());
         this.destroy();
         return { cancelled: false, newSessionId };
       }
@@ -176,7 +176,7 @@ export class AgentSessionWrapper {
         if (!clonedPath) throw new Error("Failed to clone session");
 
         const newSessionId = SessionManager.open(clonedPath, sessionDir).getSessionId();
-        cacheSessionPath(newSessionId, clonedPath);
+        cacheSessionPath(newSessionId, clonedPath, currentAgentDir());
         this.destroy();
         return { cancelled: false, newSessionId };
       }
@@ -290,6 +290,12 @@ export class AgentSessionWrapper {
 // Session registry
 // ============================================================================
 
+// 多租户说明（Step 3）：registry/locks 的键是 pi 的真实 sessionId（uuid，全局唯一）
+// 或 tempKey（含时间戳），不存在"相同 sessionId 跨租户碰撞"的穿透风险，故不加租户前缀。
+// 跨租户拿到他人 session 对象的风险由 route 层的 cwd 归属校验
+// （rejectLivoCwdOutsideWorkspace / assertOwnsCwd）兜底。
+// 真正有穿透风险的是 session-reader 的 path/ref-files 缓存（键为 sessionId 且在归属校验前
+// 返回路径），那两处已按 agentDir 前缀隔离。
 declare global {
   var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
@@ -403,7 +409,7 @@ export async function startRpcSession(
 
     const realSessionId = inner.sessionId as string;
     const realSessionFile = inner.sessionFile as string | undefined;
-    if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
+    if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile, agentDir);
 
     wrapper.onDestroy(() => registry.delete(realSessionId));
     registry.set(realSessionId, wrapper);
