@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { normalizePiReturnTo } from "@/lib/livo-sso";
+import { rejectLivoIntegrationDisabled } from "@/lib/livo-route-guard";
 
 export async function GET(req: Request) {
+  const disabled = rejectLivoIntegrationDisabled();
+  if (disabled) return disabled;
+
   const url = new URL(req.url);
   let returnTo: string;
   try {

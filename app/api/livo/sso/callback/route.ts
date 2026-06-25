@@ -4,6 +4,7 @@ import {
   LIVO_SESSION_COOKIE_NAME,
   normalizePiReturnTo,
 } from "@/lib/livo-sso";
+import { rejectLivoIntegrationDisabled } from "@/lib/livo-route-guard";
 
 interface LivoVerifyResponse {
   code?: number;
@@ -17,6 +18,9 @@ interface LivoVerifyResponse {
 }
 
 export async function GET(req: Request) {
+  const disabled = rejectLivoIntegrationDisabled();
+  if (disabled) return disabled;
+
   const url = new URL(req.url);
   const ticket = url.searchParams.get("ticket");
   if (!ticket) return NextResponse.json({ error: "ticket required" }, { status: 400 });

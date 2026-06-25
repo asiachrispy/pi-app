@@ -12,6 +12,7 @@ vi.mock("@/lib/agent-dir", () => ({
 describe("Livo SSO routes", () => {
   beforeEach(() => {
     agentDir.value = mkdtempSync(join(tmpdir(), "pi-livo-sso-routes-"));
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
     vi.stubEnv("PI_LIVO_SESSION_SECRET", "test-secret-32-byte-minimum-value");
     vi.stubEnv("PI_LIVO_BASE_URL", "https://livo.gottao.com/livoApi/livoAgent");
     vi.stubEnv("PI_LIVO_WEB_LOGIN_URL", "https://livo.gottao.com/auth/login");
@@ -33,6 +34,14 @@ describe("Livo SSO routes", () => {
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("https://livo.gottao.com/auth/login");
     expect(res.headers.get("location")).toContain("redirect=");
+  });
+
+  it("returns 404 when livo integration is disabled", async () => {
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "");
+    const { GET } = await import("./start/route");
+    const res = await GET(new Request("https://pi.gottao.com/api/livo/sso/start?returnTo=%2Fapp%2F"));
+
+    expect(res.status).toBe(404);
   });
 
   it("start rejects external returnTo", async () => {

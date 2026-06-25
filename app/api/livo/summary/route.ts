@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { isAbsolute, join, relative, resolve } from "path";
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
+import { rejectLivoIntegrationDisabled } from "@/lib/livo-route-guard";
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
 
@@ -21,6 +22,9 @@ function pathBelongsToRoot(root: string, target: string): boolean {
 // { exists, summary }. Never throws on a missing file — absence just means
 // the run has not wrapped yet.
 export async function GET(req: Request) {
+  const disabled = rejectLivoIntegrationDisabled();
+  if (disabled) return disabled;
+
   const rejected = requireApiAuth(req);
   if (rejected) return rejected;
 

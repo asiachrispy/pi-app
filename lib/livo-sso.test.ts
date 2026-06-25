@@ -13,6 +13,7 @@ vi.mock("@/lib/agent-dir", () => ({
 describe("livo sso", () => {
   beforeEach(() => {
     agentDir.value = mkdtempSync(join(tmpdir(), "pi-livo-sso-"));
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
     vi.stubEnv("PI_LIVO_SESSION_SECRET", "test-secret-32-byte-minimum-value");
     vi.stubEnv("PI_LIVO_BASE_URL", "https://livo.gottao.com/livoApi/livoAgent");
   });
@@ -53,6 +54,26 @@ describe("livo sso", () => {
     const { readLivoSession } = await import("./livo-sso");
     const req = new Request("https://pi.gottao.com/api/livo/me");
     expect(readLivoSession(req)).toBeNull();
+  });
+
+  it("ignores livo cookies when livo sso is disabled", async () => {
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "");
+    const { createLivoSession, readLivoSession } = await import("./livo-sso");
+    const session = createLivoSession({ livoUserId: "user-1" });
+    const req = new Request("https://pi.gottao.com/api/default-cwd", {
+      headers: { cookie: `pi_livo_session=${encodeURIComponent(session.cookieValue)}` },
+    });
+
+    expect(readLivoSession(req)).toBeNull();
+  });
+
+  it("returns null instead of throwing when a livo cookie exists without a secret", async () => {
+    const { issueSessionCookieValue } = await import("./signed-session-cookie");
+    const value = issueSessionCookieValue("sid", Date.now() + 60_000, "test-secret-32-byte-minimum-value");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", "");
+    const { readLivoSessionCookieValue } = await import("./livo-sso");
+
+    expect(readLivoSessionCookieValue(value)).toBeNull();
   });
 
   it("returns null for a signed cookie value without a stored session", async () => {

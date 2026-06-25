@@ -4,6 +4,7 @@ import { isAbsolute, join, relative, resolve } from "path";
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
+import { rejectLivoIntegrationDisabled } from "@/lib/livo-route-guard";
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
 
@@ -26,6 +27,9 @@ function isInside(parent: string, child: string): boolean {
 // POST /api/livo/workspace  body: { userId: string; meetingId: string }
 // Creates the narrow Livo workspace used by server-to-server Livo dispatch.
 export async function POST(req: Request) {
+  const disabled = rejectLivoIntegrationDisabled();
+  if (disabled) return disabled;
+
   const rejected = requireApiAuth(req);
   if (rejected) return rejected;
 

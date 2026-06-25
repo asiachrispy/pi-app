@@ -4,10 +4,14 @@ import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { livoUserWorkspaceRoot, readLivoSession } from "@/lib/livo-sso";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
+import { rejectLivoIntegrationDisabled } from "@/lib/livo-route-guard";
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
 
 export async function GET(req: Request) {
+  const disabled = rejectLivoIntegrationDisabled();
+  if (disabled) return disabled;
+
   const rejected = requireApiAuth(req);
   if (rejected) return rejected;
 

@@ -16,18 +16,23 @@ function getSummary(query: string): Request {
 describe("GET /api/livo/summary", () => {
   const tmpDirs: string[] = [];
   let prevRoot: string | undefined;
+  let prevIntegrationEnabled: string | undefined;
   let root: string;
 
   beforeEach(() => {
     prevRoot = process.env.PI_WEB_LIVO_WORKSPACE_ROOT;
+    prevIntegrationEnabled = process.env.PI_LIVO_INTEGRATION_ENABLED;
     root = mkdtempSync(join(tmpdir(), "pi-livo-summary-"));
     tmpDirs.push(root);
+    process.env.PI_LIVO_INTEGRATION_ENABLED = "1";
     process.env.PI_WEB_LIVO_WORKSPACE_ROOT = root;
   });
 
   afterEach(() => {
     if (prevRoot === undefined) delete process.env.PI_WEB_LIVO_WORKSPACE_ROOT;
     else process.env.PI_WEB_LIVO_WORKSPACE_ROOT = prevRoot;
+    if (prevIntegrationEnabled === undefined) delete process.env.PI_LIVO_INTEGRATION_ENABLED;
+    else process.env.PI_LIVO_INTEGRATION_ENABLED = prevIntegrationEnabled;
     for (const dir of tmpDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
     vi.clearAllMocks();
   });

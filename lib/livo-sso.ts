@@ -39,6 +39,20 @@ function secret(): string {
   return value;
 }
 
+function readSecret(): string | null {
+  const value = process.env.PI_LIVO_SESSION_SECRET;
+  return value && value.length >= 24 ? value : null;
+}
+
+export function isLivoSsoEnabled(): boolean {
+  return process.env.PI_LIVO_SSO_ENABLED === "1";
+}
+
+export function isLivoIntegrationEnabled(): boolean {
+  const mode = process.env.PI_LIVO_MODE;
+  return isLivoSsoEnabled() || process.env.PI_LIVO_INTEGRATION_ENABLED === "1" || mode === "cloud" || mode === "local";
+}
+
 function legacyStoreKey(sessionId: string, sessionSecret: string): string {
   return createHmac("sha256", sessionSecret).update(sessionId).digest("base64url");
 }
@@ -98,13 +112,15 @@ export function createLivoSession(user: LivoSessionUser): { cookieValue: string;
 }
 
 export function readLivoSession(req: Request): StoredLivoSession | null {
+  if (!isLivoSsoEnabled()) return null;
   const value = getNamedCookie(req, LIVO_SESSION_COOKIE_NAME);
   return readLivoSessionCookieValue(value);
 }
 
 export function readLivoSessionCookieValue(value: string | null | undefined): StoredLivoSession | null {
   if (!value) return null;
-  const sessionSecret = secret();
+  const sessionSecret = readSecret();
+  if (!sessionSecret) return null;
   const parsed = parseSessionCookieValue(value, sessionSecret);
   if (!parsed) return null;
   const store = readStore();
