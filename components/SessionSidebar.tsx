@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n/provider";
 import { fetchWithTimeout, isConnectionError } from "@/lib/api-fetch";
 import { getPickerCwds, pickMostRecentSession } from "@/lib/session-projects";
 import type { SessionInfo } from "@/lib/types";
+import { formatLivoWorkspacePath } from "@/lib/livo-workspace-display";
 import { FileExplorer } from "./FileExplorer";
 
 /** Persist a project removal via the dedicated excluded endpoint (always
@@ -100,11 +101,7 @@ function formatRelativeTime(dateStr: string, t: ReturnType<typeof useI18n>["t"])
 }
 
 function shortenCwd(cwd: string, homeDir?: string): string {
-  const path = (homeDir && cwd.startsWith(homeDir)) ? "~" + cwd.slice(homeDir.length) : cwd;
-  const sep = path.includes("/") ? "/" : "\\";
-  const parts = path.split(sep).filter(Boolean);
-  if (parts.length <= 2) return path;
-  return "…/" + parts.slice(-2).join(sep);
+  return formatLivoWorkspacePath(cwd, homeDir);
 }
 
 

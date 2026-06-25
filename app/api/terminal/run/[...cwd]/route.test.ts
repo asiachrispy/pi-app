@@ -9,6 +9,16 @@ vi.mock("@/lib/api-auth", () => ({
   requireApiAuth: () => null,
 }));
 
+const livoSession = vi.hoisted(() => ({ value: null as null | { livoUserId: string } }));
+
+vi.mock("@/lib/livo-sso", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/livo-sso")>("@/lib/livo-sso");
+  return {
+    ...actual,
+    readLivoSession: () => livoSession.value,
+  };
+});
+
 let testTmpCwd = "/";
 vi.mock("@/lib/session-reader", () => ({
   listAllSessions: async () => [{ cwd: testTmpCwd } as { cwd: string } & Record<string, unknown>],
@@ -24,6 +34,8 @@ beforeEach(() => {
   testTmpCwd = tmpCwd;
   delete (globalThis as Record<string, unknown>).__piTerminalAllowedRootsCache;
   delete (globalThis as Record<string, unknown>).__piTerminalRunAllowedRootsCache;
+  livoSession.value = null;
+  delete process.env.PI_WEB_LIVO_WORKSPACE_ROOT;
 });
 
 describe("POST /api/terminal/run/[...cwd]", () => {
@@ -66,6 +78,27 @@ describe("POST /api/terminal/run/[...cwd]", () => {
     const body = await res.json();
     expect(body.pid).toBeTypeOf("number");
     expect(body.startedAt).toBeTypeOf("number");
+  });
+
+  it("rejects livo terminal commands outside the current user's workspace", async () => {
+    const livoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-run-livo-"));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-run-outside-"));
+    process.env.PI_WEB_LIVO_WORKSPACE_ROOT = livoRoot;
+    livoSession.value = { livoUserId: "user-1" };
+    testTmpCwd = outside;
+
+    const { NextRequest } = await import("next/server");
+    const { POST } = await import("./route");
+    const req = new NextRequest(`http://localhost/api/terminal/run/${encodeURIComponent(outside)}`, {
+      method: "POST",
+      body: JSON.stringify({ command: "echo hi", keepRunning: false }),
+      headers: { "content-type": "application/json" },
+    });
+    const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ cwd: [outside] }) } as unknown as { params: Promise<{ cwd: string[] }> });
+
+    expect(res.status).toBe(403);
+    fs.rmSync(livoRoot, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
   });
 
   it("returns 409 when a non-keep-running command is still active", async () => {

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { getAgentDir } from "@/lib/agent-dir";
 import { getNamedCookie } from "@/lib/middleware-auth";
 import { issueSessionCookieValue, parseSessionCookieValue } from "@/lib/signed-session-cookie";
@@ -75,6 +75,10 @@ export function createLivoSession(user: LivoSessionUser): { cookieValue: string;
 
 export function readLivoSession(req: Request): StoredLivoSession | null {
   const value = getNamedCookie(req, LIVO_SESSION_COOKIE_NAME);
+  return readLivoSessionCookieValue(value);
+}
+
+export function readLivoSessionCookieValue(value: string | null | undefined): StoredLivoSession | null {
   if (!value) return null;
   const parsed = parseSessionCookieValue(value, secret());
   if (!parsed) return null;
@@ -100,10 +104,30 @@ export function livoUserWorkspaceRoot(livoUserId: string): string {
   return join(root, "users", livoUserId);
 }
 
+function pathBelongsToRoot(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !rel.startsWith("/"));
+}
+
+export function resolveLivoUserWorkspacePath(cwd: string | null | undefined, livoUserId: string): string | null {
+  const root = resolve(livoUserWorkspaceRoot(livoUserId));
+  const raw = cwd?.trim() ?? "";
+  const target = raw ? (isAbsolute(raw) ? resolve(raw) : resolve(root, raw)) : root;
+  return pathBelongsToRoot(root, target) ? target : null;
+}
+
 export function cwdBelongsToLivoUser(cwd: string | null | undefined, livoUserId: string): boolean {
   if (!cwd) return false;
   const root = resolve(livoUserWorkspaceRoot(livoUserId));
   const target = resolve(cwd);
-  const rel = relative(root, target);
-  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !rel.startsWith("/"));
+  return pathBelongsToRoot(root, target);
+}
+
+export function realCwdBelongsToLivoUser(cwd: string | null | undefined, livoUserId: string): boolean {
+  if (!cwd || !cwdBelongsToLivoUser(cwd, livoUserId)) return false;
+  try {
+    return pathBelongsToRoot(realpathSync(livoUserWorkspaceRoot(livoUserId)), realpathSync(cwd));
+  } catch {
+    return false;
+  }
 }

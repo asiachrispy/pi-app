@@ -5,6 +5,7 @@ import { isAbsolute, resolve } from "path";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { rememberWorkspaceCwd } from "@/lib/pi-web-preferences";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
+import { readLivoSession, resolveLivoUserWorkspacePath } from "@/lib/livo-sso";
 
 function normalizeCwd(cwd: string): string {
   if (cwd === "~") return homedir();
@@ -26,7 +27,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Path is required" }, { status: 400 });
     }
 
-    const normalizedCwd = normalizeCwd(cwd);
+    const livoSession = readLivoSession(req);
+    const livoCwd = livoSession ? resolveLivoUserWorkspacePath(cwd, livoSession.livoUserId) : null;
+    if (livoSession && !livoCwd) {
+      return NextResponse.json({ error: "Path is outside current Livo workspace" }, { status: 403 });
+    }
+    const normalizedCwd = livoCwd ?? normalizeCwd(cwd);
     let stat: Stats;
     try {
       stat = statSync(normalizedCwd);

@@ -42,6 +42,7 @@ describe("livo-status-callback", () => {
       meetingId: "fileId_1",
       piSessionId: "session-1",
       status: "running",
+      items: [{ todoId: "todo_a", status: "running" }],
     });
 
     expect(notified).toBe(true);
@@ -60,6 +61,7 @@ describe("livo-status-callback", () => {
       meetingId: "fileId_1",
       piSessionId: "session-1",
       status: "running",
+      items: [{ todoId: "todo_a", status: "running" }],
     });
   });
 

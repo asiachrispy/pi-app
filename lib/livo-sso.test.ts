@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,5 +52,41 @@ describe("livo sso", () => {
     const { readLivoSession } = await import("./livo-sso");
     const req = new Request("https://pi.gottao.com/api/livo/me");
     expect(readLivoSession(req)).toBeNull();
+  });
+
+  it("returns null for a signed cookie value without a stored session", async () => {
+    const { readLivoSessionCookieValue } = await import("./livo-sso");
+    const { issueSessionCookieValue } = await import("./signed-session-cookie");
+    const value = issueSessionCookieValue("missing-session", Date.now() + 60_000, "test-secret-32-byte-minimum-value");
+
+    expect(readLivoSessionCookieValue(value)).toBeNull();
+  });
+
+  it("resolves livo custom paths inside the current user's workspace only", async () => {
+    vi.stubEnv("PI_WEB_LIVO_WORKSPACE_ROOT", "/data/pi-agent/workspaces/livo");
+    const { resolveLivoUserWorkspacePath } = await import("./livo-sso");
+
+    expect(resolveLivoUserWorkspacePath("", "user-1")).toBe("/data/pi-agent/workspaces/livo/users/user-1");
+    expect(resolveLivoUserWorkspacePath("meetings/m1", "user-1")).toBe("/data/pi-agent/workspaces/livo/users/user-1/meetings/m1");
+    expect(resolveLivoUserWorkspacePath("/data/pi-agent/workspaces/livo/users/user-1/meetings/m1", "user-1")).toBe("/data/pi-agent/workspaces/livo/users/user-1/meetings/m1");
+    expect(resolveLivoUserWorkspacePath("../user-2", "user-1")).toBeNull();
+    expect(resolveLivoUserWorkspacePath("/etc", "user-1")).toBeNull();
+  });
+
+  it.skipIf(process.platform === "win32")("rejects symlink escapes from livo realpath checks", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-livo-root-"));
+    const outside = mkdtempSync(join(tmpdir(), "pi-livo-outside-"));
+    try {
+      vi.stubEnv("PI_WEB_LIVO_WORKSPACE_ROOT", root);
+      const userRoot = join(root, "users", "user-1");
+      mkdirSync(userRoot, { recursive: true });
+      symlinkSync(outside, join(userRoot, "linked-outside"));
+
+      const { realCwdBelongsToLivoUser } = await import("./livo-sso");
+      expect(realCwdBelongsToLivoUser(join(userRoot, "linked-outside"), "user-1")).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

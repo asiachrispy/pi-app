@@ -1,4 +1,4 @@
-import { mkdirSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join, resolve } from "path";
 import { NextResponse } from "next/server";
@@ -25,18 +25,46 @@ export async function POST(req: Request) {
   if (rejected) return rejected;
 
   try {
-    const body = await req.json() as { userId?: unknown; meetingId?: unknown };
+    const body = await req.json() as {
+      userId?: unknown;
+      meetingId?: unknown;
+      summary?: unknown;
+      todos?: unknown;
+      transcript?: unknown;
+    };
     const userId = safeSegment(body.userId, "userId");
     if (userId instanceof NextResponse) return userId;
     const meetingId = safeSegment(body.meetingId, "meetingId");
     if (meetingId instanceof NextResponse) return meetingId;
 
     const root = livoRoot();
-    const cwd = resolve(root, "users", userId, "meetings", meetingId);
+    const cwd = resolve(root, "users", userId);
+    const meetingPath = resolve(cwd, "meetings", meetingId);
     mkdirSync(cwd, { recursive: true });
+    mkdirSync(join(meetingPath, "inputs"), { recursive: true });
+    mkdirSync(join(meetingPath, "working"), { recursive: true });
+    mkdirSync(join(meetingPath, "outputs"), { recursive: true });
+    writeInputFile(
+      meetingPath,
+      "meeting-brief.md",
+      `# Meeting Brief\n\n## Summary\n${stringInput(body.summary)}\n\n## Todos\n${stringInput(body.todos)}\n`
+    );
+    writeInputFile(meetingPath, "transcript.txt", body.transcript);
     invalidateAllowedRootsCache();
-    return NextResponse.json({ success: true, cwd });
+    const workspaceId = `livo:${userId}`;
+    const publicOrigin = process.env.PI_PUBLIC_ORIGIN || "https://pi.gottao.com";
+    const workspaceUrl = `${publicOrigin.replace(/\/+$/, "")}/app/?workspace=${encodeURIComponent(workspaceId)}&meeting=${encodeURIComponent(meetingId)}`;
+    return NextResponse.json({ success: true, workspaceId, meetingId, cwd, meetingPath, workspaceUrl });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
+}
+
+function writeInputFile(meetingPath: string, name: string, value: unknown) {
+  if (typeof value !== "string") return;
+  writeFileSync(join(meetingPath, "inputs", name), value);
+}
+
+function stringInput(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }

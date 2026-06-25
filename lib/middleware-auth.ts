@@ -100,6 +100,16 @@ async function verifySessionCookieValue(value: string, secret: string): Promise<
   return timingSafeEqualString(expected, signature);
 }
 
+export async function hasValidSignedCookie(req: Request, name: string, secret: string | undefined): Promise<boolean> {
+  const value = getNamedCookie(req, name);
+  if (!value || !secret) return false;
+  return verifySessionCookieValue(value, secret);
+}
+
+export async function hasValidLivoSessionCookie(req: Request): Promise<boolean> {
+  return hasValidSignedCookie(req, "pi_livo_session", process.env.PI_LIVO_SESSION_SECRET);
+}
+
 export function isRemoteAccessEnabledEnv(): boolean {
   return process.env.PI_WEB_REMOTE === "1";
 }
@@ -133,7 +143,7 @@ export async function authorizeMiddlewareRequest(req: Request): Promise<Middlewa
     return { authorized: true, loopback, remoteEnabled: true, readOnly, reason: null };
   }
 
-  if (process.env.PI_LIVO_SSO_ENABLED === "1" && getNamedCookie(req, "pi_livo_session")) {
+  if (process.env.PI_LIVO_SSO_ENABLED === "1" && await hasValidLivoSessionCookie(req)) {
     return { authorized: true, loopback, remoteEnabled: true, readOnly, reason: null };
   }
 

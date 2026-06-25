@@ -10,6 +10,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { isPathAllowed, filePathFromSegments } from "@/lib/file-access";
 import { listAllSessions } from "@/lib/session-reader";
 import { getAgentDir } from "@/lib/agent-dir";
+import { readLivoSession, realCwdBelongsToLivoUser } from "@/lib/livo-sso";
 import os from "os";
 import path from "path";
 import fs from "fs";
@@ -51,6 +52,10 @@ export async function GET(
 
   const { cwd: segments } = await ctx.params;
   const cwd = filePathFromSegments(segments);
+  const livoSession = readLivoSession(request);
+  if (livoSession && !realCwdBelongsToLivoUser(cwd, livoSession.livoUserId)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   const allowed = await getAllowedRoots();
   if (!isPathAllowed(cwd, allowed)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });

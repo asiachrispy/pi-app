@@ -1,11 +1,20 @@
 export type LivoPiStatus = "running" | "failed" | "completed";
 
+export type LivoTodoStatusItem = {
+  todoId?: unknown;
+  title?: unknown;
+  status?: unknown;
+  message?: unknown;
+  outputPath?: unknown;
+};
+
 export type LivoStatusCallbackInput = {
   userId?: unknown;
   meetingId?: unknown;
   piSessionId?: unknown;
   status: LivoPiStatus;
   message?: string;
+  items?: LivoTodoStatusItem[];
 };
 
 export function shouldNotifyLivo(input: LivoStatusCallbackInput): input is {
@@ -14,6 +23,7 @@ export function shouldNotifyLivo(input: LivoStatusCallbackInput): input is {
   piSessionId: string;
   status: LivoPiStatus;
   message?: string;
+  items?: LivoTodoStatusItem[];
 } {
   return (
     typeof input.userId === "string" &&
@@ -44,6 +54,7 @@ export async function notifyLivoPiStatus(input: LivoStatusCallbackInput) {
       piSessionId: input.piSessionId,
       status: input.status,
       message: input.message,
+      items: input.items,
     }),
   });
 

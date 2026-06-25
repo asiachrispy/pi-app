@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authorizeMiddlewareRequest, getNamedCookie, getSessionCookie, isRemoteAccessEnabledEnv } from "./lib/middleware-auth";
+import { authorizeMiddlewareRequest, getSessionCookie, hasValidLivoSessionCookie, isRemoteAccessEnabledEnv } from "./lib/middleware-auth";
 
 function isPublicSharePath(pathname: string): boolean {
   return pathname === "/api/share" || pathname.startsWith("/api/share/");
@@ -36,7 +36,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/" && request.headers.get("x-pi-workbench-entry") === "/app"
   );
   if (process.env.PI_LIVO_SSO_ENABLED === "1" && isAppEntry) {
-    if (!getNamedCookie(request, "pi_livo_session")) {
+    if (!await hasValidLivoSessionCookie(request)) {
       const start = new URL("/api/livo/sso/start", request.url);
       const appPath = pathname === "/app" || request.headers.get("x-pi-workbench-entry") === "/app"
         ? "/app/"
@@ -63,7 +63,7 @@ export async function middleware(request: NextRequest) {
   if (getSessionCookie(request)) {
     return NextResponse.next();
   }
-  if (getNamedCookie(request, "pi_livo_session")) {
+  if (await hasValidLivoSessionCookie(request)) {
     return NextResponse.next();
   }
 

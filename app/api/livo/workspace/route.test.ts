@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,15 +34,36 @@ describe("POST /api/livo/workspace", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a meeting workspace under the configured Livo root", async () => {
+  it("creates one user workspace and a meeting folder under it", async () => {
     const { POST } = await import("./route");
-    const res = await POST(postWorkspace({ userId: "user-42", meetingId: "meeting_123" }));
+    const res = await POST(postWorkspace({
+      userId: "user-42",
+      meetingId: "meeting_123",
+      summary: "会议摘要",
+      todos: "- 跟进客户",
+      transcript: "完整转录",
+    }));
 
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toMatchObject({ success: true });
-    expect(json.cwd).toContain("/users/user-42/meetings/meeting_123");
+    expect(json).toMatchObject({
+      success: true,
+      workspaceId: "livo:user-42",
+      meetingId: "meeting_123",
+    });
+    expect(json.cwd).toContain("/users/user-42");
+    expect(json.cwd).not.toContain("/meetings/meeting_123");
+    expect(json.meetingPath).toContain("/users/user-42/meetings/meeting_123");
     expect(existsSync(json.cwd)).toBe(true);
+    expect(existsSync(json.meetingPath)).toBe(true);
+    expect(existsSync(join(json.meetingPath, "inputs"))).toBe(true);
+    expect(readFileSync(join(json.meetingPath, "inputs", "meeting-brief.md"), "utf8")).toContain("会议摘要");
+    expect(readFileSync(join(json.meetingPath, "inputs", "meeting-brief.md"), "utf8")).toContain("- 跟进客户");
+    expect(readFileSync(join(json.meetingPath, "inputs", "transcript.txt"), "utf8")).toBe("完整转录");
+    expect(existsSync(join(json.meetingPath, "inputs", "meeting-summary.md"))).toBe(false);
+    expect(existsSync(join(json.meetingPath, "inputs", "todos.md"))).toBe(false);
+    expect(existsSync(join(json.meetingPath, "inputs", "transcript.md"))).toBe(false);
+    expect(json.workspaceUrl).toContain("/app/?workspace=livo%3Auser-42&meeting=meeting_123");
     expect(globalThis.__piAllowedRootsCache).toBeUndefined();
   });
 

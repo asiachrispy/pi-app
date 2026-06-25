@@ -34,6 +34,7 @@ import {
 import { resolveFilePathForOpen } from "@/lib/file-paths";
 import { cachePiWebPreferences } from "@/lib/pi-web-preferences-cache";
 import { workbenchPath, workbenchSessionPath } from "@/lib/workbench-url";
+import { buildLivoWorkspaceResolvePath } from "@/lib/livo-workspace-url";
 import {
   usePanelResize,
   MIN_LEFT_SIDEBAR_WIDTH,
@@ -166,6 +167,8 @@ export function AppShell() {
   }, []);
 
   const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
+  const [initialWorkspaceId] = useState<string | null>(() => searchParams.get("workspace"));
+  const [initialMeetingId] = useState<string | null>(() => searchParams.get("meeting"));
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
@@ -174,6 +177,7 @@ export function AppShell() {
   const suppressCwdBumpRef = useRef(false);
 
   useEffect(() => {
+    if (initialWorkspaceId) return;
     void fetch("/api/preferences")
       .then((res) => res.json())
       .then((data: { preferences?: { defaultWorkspaceCwd?: string; toolMode?: ToolMode } }) => {
@@ -189,7 +193,24 @@ export function AppShell() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [initialWorkspaceId]);
+
+  useEffect(() => {
+    if (!initialWorkspaceId) return;
+    void fetch(buildLivoWorkspaceResolvePath(initialWorkspaceId, initialMeetingId), { cache: "no-store" })
+      .then((res) => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
+      .then((data: { cwd?: string }) => {
+        if (data.cwd) {
+          setPreferredCwd(data.cwd);
+          setActiveCwd(data.cwd);
+          setNewSessionCwd(data.cwd);
+          setWorkbenchView("chat");
+        }
+      })
+      .catch((error) => {
+        setSessionRestoreNotice(String(error));
+      });
+  }, [initialMeetingId, initialWorkspaceId]);
 
   const ensureWorkbenchCwd = useCallback(async () => {
     const existing = activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? preferredCwd;
@@ -470,6 +491,13 @@ export function AppShell() {
   const topBarBackground = "var(--bg-elevated)";
   const showBranchNavigator = Boolean(gitBranch) || hasFork(branchTree);
   const showHomeTabActive = workbenchView === "home" && !showChat;
+  const livoContextLabel = initialWorkspaceId?.startsWith("livo:")
+    ? [
+        "Livo 工作区",
+        initialMeetingId ? `会议 ${initialMeetingId}` : null,
+        selectedSession?.id ? `Pi 会话 ${selectedSession.id.slice(0, 8)}` : null,
+      ].filter(Boolean).join(" · ")
+    : null;
 
   useEffect(() => {
     const view = searchParams.get("view");
@@ -681,6 +709,24 @@ export function AppShell() {
                   <polyline points="2 3.5 5 6.5 8 3.5" />
                 </svg>
               </button>
+            </div>
+          )}
+          {livoContextLabel && (
+            <div
+              title={livoContextLabel}
+              style={{
+                minWidth: 0,
+                maxWidth: 360,
+                padding: "0 12px",
+                color: "var(--text-muted)",
+                fontSize: 12,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                borderLeft: "1px solid var(--border)",
+              }}
+            >
+              {livoContextLabel}
             </div>
           )}
           {/* Terminal toggle — inside top bar, to the left of usage report */}

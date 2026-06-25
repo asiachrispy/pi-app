@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   try {
     const livoSession = readLivoSession(req);
     if (livoSession) {
-      const dir = join(livoUserWorkspaceRoot(livoSession.livoUserId), "default");
+      const dir = livoUserWorkspaceRoot(livoSession.livoUserId);
       mkdirSync(dir, { recursive: true });
       return NextResponse.json({ cwd: dir });
     }

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { NextRequest } from "next/server";
@@ -10,6 +10,8 @@ const roots = vi.hoisted(() => ({
   agentDir: "",
 }));
 
+const livoSession = vi.hoisted(() => ({ value: null as null | { livoUserId: string } }));
+
 vi.mock("@/lib/session-reader", () => ({
   listAllSessions: vi.fn(async () => [{ cwd: roots.sessionCwd }]),
 }));
@@ -17,6 +19,14 @@ vi.mock("@/lib/session-reader", () => ({
 vi.mock("@/lib/agent-dir", () => ({
   getAgentDir: () => roots.agentDir,
 }));
+
+vi.mock("@/lib/livo-sso", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/livo-sso")>("@/lib/livo-sso");
+  return {
+    ...actual,
+    readLivoSession: () => livoSession.value,
+  };
+});
 
 function pathSegments(filePath: string): string[] {
   return filePath.replace(/^\/+/, "").split("/");
@@ -44,6 +54,7 @@ describe("GET /api/files/[...path]", () => {
     roots.sessionCwd = makeTempDir("pi-files-cwd-");
     roots.agentDir = makeTempDir("pi-files-agent-");
     globalThis.__piAllowedRootsCache = undefined;
+    livoSession.value = null;
   });
 
   afterEach(() => {
@@ -51,6 +62,7 @@ describe("GET /api/files/[...path]", () => {
     for (const dir of tmpDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
     }
+    delete process.env.PI_WEB_LIVO_WORKSPACE_ROOT;
     vi.clearAllMocks();
   });
 
@@ -147,5 +159,28 @@ describe("GET /api/files/[...path]", () => {
 
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toEqual({ error: "Access denied" });
+  });
+
+  it("limits livo sso file access to the current user's workspace root", async () => {
+    process.env.PI_WEB_LIVO_WORKSPACE_ROOT = makeTempDir("pi-files-livo-root-");
+    livoSession.value = { livoUserId: "user-1" };
+    const owned = join(process.env.PI_WEB_LIVO_WORKSPACE_ROOT, "users", "user-1", "note.txt");
+    const other = join(process.env.PI_WEB_LIVO_WORKSPACE_ROOT, "users", "user-2", "secret.txt");
+    roots.sessionCwd = join(process.env.PI_WEB_LIVO_WORKSPACE_ROOT, "users", "user-1");
+    mkdirSync(roots.sessionCwd, { recursive: true });
+    mkdirSync(join(process.env.PI_WEB_LIVO_WORKSPACE_ROOT, "users", "user-2"), { recursive: true });
+    writeFileSync(owned, "owned");
+    writeFileSync(other, "secret");
+
+    const { GET } = await import("./route");
+    const ok = await GET(requestFor(owned), {
+      params: Promise.resolve({ path: pathSegments(owned) }),
+    });
+    const blocked = await GET(requestFor(other), {
+      params: Promise.resolve({ path: pathSegments(other) }),
+    });
+
+    expect(ok.status).toBe(200);
+    expect(blocked.status).toBe(403);
   });
 });

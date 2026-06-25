@@ -7,7 +7,7 @@ const ownerRoot = vi.hoisted(() => ({ value: "" }));
 
 vi.mock("@/lib/livo-sso", () => ({
   readLivoSession: () => ({ livoUserId: "user-1", email: "user@example.com" }),
-  cwdBelongsToLivoUser: (cwd: string, userId: string) => cwd.includes(`/users/${userId}/`),
+  cwdBelongsToLivoUser: (cwd: string, userId: string) => cwd === join(ownerRoot.value, "users", userId) || cwd.includes(`/users/${userId}/`),
   livoUserWorkspaceRoot: (userId: string) => join(ownerRoot.value, "users", userId),
 }));
 
@@ -133,6 +133,6 @@ describe("Livo session ownership", () => {
     const res = await POST(new Request("https://pi.gottao.com/api/default-cwd", { method: "POST" }));
     const json = await res.json();
 
-    expect(json.cwd).toBe(join(ownerRoot.value, "users", "user-1", "default"));
+    expect(json.cwd).toBe(join(ownerRoot.value, "users", "user-1"));
   });
 });

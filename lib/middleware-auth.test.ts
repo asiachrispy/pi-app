@@ -2,8 +2,10 @@ import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { issueSessionCookieValue } from "./signed-session-cookie";
 
 const agentDir = vi.hoisted(() => ({ value: "" }));
+const LIVO_SECRET = "test-secret-32-byte-minimum-value";
 
 vi.mock("@/lib/agent-dir", () => ({
   getAgentDir: () => agentDir.value,
@@ -74,10 +76,12 @@ describe("middleware auth policy", () => {
   it("allows livo sso cookie through middleware when enabled", async () => {
     vi.stubEnv("PI_WEB_REMOTE", "1");
     vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", LIVO_SECRET);
+    const cookieValue = issueSessionCookieValue("sid", Date.now() + 60_000, LIVO_SECRET);
     const req = new Request("http://192.168.1.5:30141/api/sessions", {
       headers: {
         host: "192.168.1.5:30141",
-        cookie: "pi_livo_session=opaque",
+        cookie: `pi_livo_session=${encodeURIComponent(cookieValue)}`,
       },
     });
     const { authorizeMiddlewareRequest } = await import("./middleware-auth");

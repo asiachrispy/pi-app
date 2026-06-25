@@ -3,6 +3,8 @@ import { existsSync } from "fs";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { notifyLivoPiStatus } from "@/lib/livo-status-callback";
+import type { LivoTodoStatusItem } from "@/lib/livo-status-callback";
+import { readLivoSession, realCwdBelongsToLivoUser } from "@/lib/livo-sso";
 
 // POST /api/agent/new  body: { cwd: string; type: string; message: string; ... }
 // Spawns a brand-new pi session and immediately sends the first command.
@@ -13,13 +15,19 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json() as { cwd?: string; [key: string]: unknown };
-    const { cwd, livoUserId, livoMeetingId, ...command } = body;
+    const { cwd, livoUserId, livoMeetingId, livoTodos, ...command } = body;
 
     if (!cwd || typeof cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
     if (!existsSync(cwd)) {
       return NextResponse.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
+    }
+    const livoOwner = typeof livoUserId === "string" && livoUserId.trim()
+      ? livoUserId
+      : readLivoSession(req)?.livoUserId;
+    if (livoOwner && !realCwdBelongsToLivoUser(cwd, livoOwner)) {
+      return NextResponse.json({ error: "cwd is outside current Livo workspace" }, { status: 403 });
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
@@ -53,6 +61,7 @@ export async function POST(req: Request) {
         piSessionId: realSessionId,
         status: "failed",
         message: String(error),
+        items: livoTodoItems(livoTodos, "failed", String(error)),
       });
       throw error;
     }
@@ -62,10 +71,28 @@ export async function POST(req: Request) {
       meetingId: livoMeetingId,
       piSessionId: realSessionId,
       status: "running",
+      items: livoTodoItems(livoTodos, "running"),
     });
 
     return NextResponse.json({ success: true, sessionId: realSessionId, data: result });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
+}
+
+function livoTodoItems(value: unknown, status: "running" | "failed", message?: string): LivoTodoStatusItem[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items: LivoTodoStatusItem[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const todo = item as { todoId?: unknown; title?: unknown };
+    if (typeof todo.todoId !== "string" || !todo.todoId.trim()) continue;
+    items.push({
+      todoId: todo.todoId,
+      title: typeof todo.title === "string" ? todo.title : undefined,
+      status,
+      message,
+    });
+  }
+  return items;
 }

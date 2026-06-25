@@ -1,6 +1,13 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { middleware } from "./middleware";
+import { issueSessionCookieValue } from "./lib/signed-session-cookie";
+
+const LIVO_SECRET = "test-secret-32-byte-minimum-value";
+
+function livoCookie(): string {
+  return `pi_livo_session=${issueSessionCookieValue("sid", Date.now() + 60_000, LIVO_SECRET)}`;
+}
 
 function apiRequest(pathname: string, method = "GET"): NextRequest {
   return new NextRequest(`http://192.168.1.5:30141${pathname}`, {
@@ -49,6 +56,21 @@ describe("middleware public API matrix", () => {
     expect((await middleware(apiRequest("/api/sessions", "GET"))).status).toBe(403);
   });
 
+  it("does not let an invalid Pi Livo session cookie bypass private API auth", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "");
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", LIVO_SECRET);
+
+    const res = await middleware(new NextRequest("http://192.168.1.5:30141/api/sessions", {
+      headers: {
+        host: "192.168.1.5:30141",
+        cookie: "pi_livo_session=stale",
+      },
+    }));
+
+    expect(res.status).toBe(403);
+  });
+
   it("allows the product landing page at the site root", async () => {
     vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
 
@@ -68,10 +90,21 @@ describe("middleware public API matrix", () => {
 
   it("allows the app entry when a Pi Livo session cookie exists", async () => {
     vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", LIVO_SECRET);
 
-    const res = await middleware(pageRequest("/app/", "pi_livo_session=session-value"));
+    const res = await middleware(pageRequest("/app/", livoCookie()));
 
     expect(res.status).toBe(200);
+  });
+
+  it("redirects the app entry when the Pi Livo session cookie is invalid", async () => {
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", LIVO_SECRET);
+
+    const res = await middleware(pageRequest("/app/", "pi_livo_session=stale"));
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("https://pi.gottao.com/api/livo/sso/start?returnTo=%2Fapp%2F");
   });
 
   it("redirects the rewritten app entry when Nginx strips /app before proxying", async () => {

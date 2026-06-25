@@ -8,6 +8,7 @@ import { getAgentDir } from "@/lib/agent-dir";
 import { requireApiAuth } from "@/lib/api-auth";
 import { loadPiWebPreferences } from "@/lib/pi-web-preferences";
 import { getCachedAllowedRoots, setCachedAllowedRoots } from "@/lib/allowed-roots-cache";
+import { livoUserWorkspaceRoot, readLivoSession } from "@/lib/livo-sso";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -317,15 +318,17 @@ export async function GET(
     const { path: segments } = await params;
     const filePath = filePathFromSegments(segments);
     const type = request.nextUrl.searchParams.get("type") ?? "list";
+    const livoSession = readLivoSession(request);
+    const livoAllowedRoots = livoSession ? new Set([livoUserWorkspaceRoot(livoSession.livoUserId)]) : null;
 
-    const allowedRoots = await getAllowedRoots();
+    const allowedRoots = livoAllowedRoots ?? await getAllowedRoots();
     // Files the agent referenced in the active session are allowed even when they
     // live outside the cwd-derived roots. Resolved lazily so the common in-root
     // case never scans the transcript.
     const sessionId = request.nextUrl.searchParams.get("sessionId");
     let referencedFiles: Set<string> | null = null;
     const referenced = async (): Promise<Set<string>> =>
-      (referencedFiles ??= sessionId ? await collectSessionReferencedFiles(sessionId) : new Set<string>());
+      (referencedFiles ??= sessionId && !livoSession ? await collectSessionReferencedFiles(sessionId) : new Set<string>());
 
     if (!isPathAllowed(filePath, allowedRoots) && !isReferencedFileAllowed(filePath, await referenced())) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
