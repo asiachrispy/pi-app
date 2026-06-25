@@ -1,0 +1,26 @@
+source [file join [file dirname [info script]] _common.exp]
+
+# Slim Pi Web deploy: swap the release bundle and restart only.
+# Does NOT rewrite systemd env (use deploy-pi-web-livo-sso.exp when env/secrets
+# change). Safe for frontend/API-only releases where env is unchanged.
+
+set timeout 7200
+set release_tar "/tmp/pi-app-runtime-livo-sso.tgz"
+set remote_tar "/tmp/pi-app-runtime-livo-sso.tgz"
+
+if {![file exists $release_tar]} {
+    send_user "Missing release tar: $release_tar\n"
+    exit 1
+}
+
+ops_scp $release_tar $remote_tar 7200
+
+set remote_cmd "set -e; sudo -S bash -lc 'set -e; ts=\$(date +%Y%m%d%H%M%S); release=/opt/pi-agent/releases/pi-app-runtime-livo-sso-\$ts; mkdir -p \"\$release\"; tar -xzf $remote_tar -C \"\$release\"; if test -d \"\$release/.next/standalone\"; then mkdir -p \"\$release/.next/standalone/.next\"; cp -a \"\$release/.next/static\" \"\$release/.next/standalone/.next/static\"; cp -a \"\$release/public\" \"\$release/.next/standalone/public\"; current=\"\$release/.next/standalone\"; else current=\"\$release\"; fi; chown -R root:root \"\$release\"; chmod -R a+rX \"\$release\"; rm -f $remote_tar; ln -sfn \"\$current\" /opt/pi-agent/pi-app-current; systemctl restart pi-agent-web; sleep 5; systemctl is-active --quiet pi-agent-web; curl -sS -m 10 -o /dev/null -w \"PI_LOCAL_HEALTH:%{http_code}\\n\" http://127.0.0.1:30141/api/health; echo PI_WEB_DEPLOY_OK:\$ts'"
+
+spawn ssh -tt -o StrictHostKeyChecking=no $host $remote_cmd
+expect {
+    -re ".*yes/no.*" { send "yes\r"; exp_continue }
+    -re ".*password.*" { send "$password\r"; exp_continue }
+    timeout { send_user "SSH TIMEOUT\n"; exit 1 }
+    eof
+}
