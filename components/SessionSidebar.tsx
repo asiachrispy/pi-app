@@ -364,6 +364,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [reloadPersistedExcluded]);
 
   const restoredRef = useRef(false);
+  // Bounded retries for the initial ?session= restore. The target session and
+  // the resolved workspace cwd (selectedCwdProp) arrive from two independent
+  // async fetches; a Livo deep link can land here before either is ready. We
+  // wait/retry instead of declaring the session missing on the first render,
+  // which previously caused intermittent "session not found" redirects to home.
+  const restoreAttemptsRef = useRef(0);
+  const restoreRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [restoreTick, setRestoreTick] = useState(0);
+  const MAX_RESTORE_ATTEMPTS = 10;
 
   useEffect(() => {
     onCwdChange?.(selectedCwd);
@@ -376,44 +385,57 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
     const finishRestore = (found: boolean) => {
       restoredRef.current = true;
+      if (restoreRetryTimerRef.current) {
+        clearTimeout(restoreRetryTimerRef.current);
+        restoreRetryTimerRef.current = null;
+      }
       onInitialRestoreDone?.(found);
     };
 
-    if (selectedCwd === null) {
-      if (selectedCwdProp) {
-        setSelectedCwd(selectedCwdProp);
-        const target = allSessions.find((s) => s.id === initialSessionId);
-        if (target && target.cwd === selectedCwdProp) {
-          onSelectSession(target, true);
-          finishRestore(true);
-          return;
-        }
-        finishRestore(false);
-        return;
-      }
-
-      const target = allSessions.find((s) => s.id === initialSessionId);
-      if (target) {
-        setSelectedCwd(target.cwd);
-        onSelectSession(target, true);
-        finishRestore(true);
-        return;
-      }
-
-      finishRestore(false);
-      const cwds = pickerProjectCwds.length > 0 ? pickerProjectCwds : getPickerCwds(allSessions);
-      if (cwds.length > 0) setSelectedCwd(cwds[0]);
-      return;
-    }
-
+    // The target session id is authoritative: Pi session ids are globally
+    // unique, so a match by id is the session regardless of which cwd the
+    // sidebar currently shows. Select it and align the cwd to the session.
     const target = allSessions.find((s) => s.id === initialSessionId);
     if (target) {
+      if (selectedCwd === null || selectedCwd !== target.cwd) {
+        setSelectedCwd(target.cwd);
+      }
       onSelectSession(target, true);
       finishRestore(true);
       return;
     }
+
+    // Not found yet. The session list and the workspace-resolved cwd arrive
+    // from independent async fetches; a freshly dispatched Livo session may
+    // also not be in the list on the first read. Retry a bounded number of
+    // times (re-fetching the list) before declaring the link invalid.
+    if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
+      restoreAttemptsRef.current += 1;
+      if (restoreRetryTimerRef.current) clearTimeout(restoreRetryTimerRef.current);
+      restoreRetryTimerRef.current = setTimeout(() => {
+        void loadSessions();
+        setRestoreTick((t) => t + 1);
+      }, 400);
+      return;
+    }
+
+    // Exhausted retries: fall back to a sensible cwd and report not found.
+    if (selectedCwd === null) {
+      const cwds = pickerProjectCwds.length > 0 ? pickerProjectCwds : getPickerCwds(allSessions);
+      if (selectedCwdProp) {
+        setSelectedCwd(selectedCwdProp);
+      } else if (cwds.length > 0) {
+        setSelectedCwd(cwds[0]);
+      }
+    }
     finishRestore(false);
-  }, [loading, allSessions, pickerProjectCwds, selectedCwd, selectedCwdProp, initialSessionId, onSelectSession, onInitialRestoreDone]);
+  }, [loading, allSessions, pickerProjectCwds, selectedCwd, selectedCwdProp, initialSessionId, onSelectSession, onInitialRestoreDone, loadSessions, restoreTick]);
+
+  useEffect(() => {
+    return () => {
+      if (restoreRetryTimerRef.current) clearTimeout(restoreRetryTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (selectedCwd !== null) return;
