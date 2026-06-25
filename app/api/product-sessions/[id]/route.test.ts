@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 
-const { readMock, upsertMock, rejectMock, listSessionsMock } = vi.hoisted(() => ({
+const { readMock, upsertMock, rejectMock, listSessionsMock, livoSession } = vi.hoisted(() => ({
   readMock: vi.fn(),
   upsertMock: vi.fn(),
   rejectMock: vi.fn(),
   listSessionsMock: vi.fn(),
+  livoSession: { value: null as null | { livoUserId: string } },
 }));
 
 vi.mock("@/lib/scene-metadata", () => ({
@@ -16,6 +17,11 @@ vi.mock("@/lib/session-reader", () => ({
 }));
 vi.mock("@/lib/local-request-guard", () => ({
   rejectUnsafeMutation: rejectMock,
+}));
+vi.mock("@/lib/livo-sso", () => ({
+  readLivoSession: () => livoSession.value,
+  cwdBelongsToLivoUser: (cwd: string | null | undefined, userId: string) =>
+    Boolean(cwd?.includes(`/users/${userId}/`)),
 }));
 
 const buildRequest = (body: unknown, headers: Record<string, string> = {}): Request => {
@@ -38,6 +44,11 @@ const baseMetadata = {
 };
 
 describe("PATCH /api/product-sessions/[id]", () => {
+  beforeEach(() => {
+    livoSession.value = null;
+    vi.resetModules();
+  });
+
   it("returns 200 with merged metadata on a happy-path update", async () => {
     readMock.mockReset().mockReturnValueOnce({ ...baseMetadata });
     upsertMock.mockReset().mockResolvedValueOnce(undefined);
@@ -147,6 +158,36 @@ describe("PATCH /api/product-sessions/[id]", () => {
 
     expect(res.status).toBe(404);
     expect(body.error).toMatch(/not found/i);
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects livo users updating another user's product session metadata", async () => {
+    livoSession.value = { livoUserId: "user-1" };
+    readMock.mockReset().mockReturnValueOnce({ ...baseMetadata });
+    upsertMock.mockReset();
+    rejectMock.mockReset().mockReturnValueOnce(null);
+    listSessionsMock.mockReset().mockResolvedValueOnce([
+      {
+        id: "s1",
+        path: "/tmp/s1.jsonl",
+        cwd: "/data/pi-agent/workspaces/livo/users/user-2/default",
+        name: "Other user session",
+        created: "2026-06-01T08:00:00.000Z",
+        modified: "2026-06-01T08:05:00.000Z",
+        messageCount: 2,
+        firstMessage: "Private",
+      },
+    ]);
+
+    const { PATCH } = await import("./route");
+    const res = await PATCH(
+      buildRequest({ status: "completed" }),
+      { params: buildParams("s1") },
+    );
+    const body = (await res.json()) as { error?: string };
+
+    expect(res.status).toBe(403);
+    expect(body.error).toMatch(/outside current Livo workspace/);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 

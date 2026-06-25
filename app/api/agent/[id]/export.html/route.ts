@@ -6,6 +6,7 @@ import { resolveSessionPath } from "@/lib/session-reader";
 import { sanitizeExportHtml } from "@/lib/sanitize-export-html";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { requireApiAuth } from "@/lib/api-auth";
+import { rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
 
 export async function GET(
   req: Request,
@@ -17,13 +18,16 @@ export async function GET(
   const { id } = await params;
 
   try {
+    const filePath = await resolveSessionPath(id);
+    if (!filePath) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+    const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
+    const rejectedByOwner = rejectLivoCwdOutsideWorkspace(req, cwd);
+    if (rejectedByOwner) return rejectedByOwner;
+
     let session = getRpcSession(id);
     if (!session?.isAlive()) {
-      const filePath = await resolveSessionPath(id);
-      if (!filePath) {
-        return NextResponse.json({ error: "Session not found" }, { status: 404 });
-      }
-      const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
       ({ session } = await startRpcSession(id, filePath, cwd));
     }
 

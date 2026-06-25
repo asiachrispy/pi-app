@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { resolveSessionPath, buildSessionContext } from "@/lib/session-reader";
 import { requireApiAuth } from "@/lib/api-auth";
+import { rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
 
 export async function GET(
   req: Request,
@@ -21,6 +22,8 @@ export async function GET(
     }
 
     const sm = SessionManager.open(filePath);
+    const rejectedByOwner = rejectLivoCwdOutsideWorkspace(req, sm.getHeader()?.cwd);
+    if (rejectedByOwner) return rejectedByOwner;
     const context = buildSessionContext(sm.getEntries() as never, leafId);
 
     return NextResponse.json({ context });

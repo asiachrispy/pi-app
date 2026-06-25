@@ -2,6 +2,7 @@ import { resolveSessionPath } from "@/lib/session-reader";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { requireApiAuth } from "@/lib/api-auth";
+import { rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -14,15 +15,17 @@ export async function GET(
   if (rejected) return rejected;
 
   const { id } = await params;
+  const filePath = await resolveSessionPath(id);
+  if (!filePath) {
+    return new Response("Session not found", { status: 404 });
+  }
+  const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
+  const rejectedByOwner = rejectLivoCwdOutsideWorkspace(req, cwd);
+  if (rejectedByOwner) return rejectedByOwner;
 
   // Fast path: already-running session
   let session = getRpcSession(id);
   if (!session || !session.isAlive()) {
-    const filePath = await resolveSessionPath(id);
-    if (!filePath) {
-      return new Response("Session not found", { status: 404 });
-    }
-    const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
     try {
       ({ session } = await startRpcSession(id, filePath, cwd));
     } catch (error) {

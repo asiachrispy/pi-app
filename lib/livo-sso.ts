@@ -20,6 +20,10 @@ export interface StoredLivoSession extends LivoSessionUser {
   expiresAt: string;
 }
 
+export interface LivoOwnedResource {
+  cwd?: string | null;
+}
+
 function sessionStorePath(): string {
   return join(getAgentDir(), "auth", "livo-sessions.json");
 }
@@ -121,6 +125,24 @@ export function cwdBelongsToLivoUser(cwd: string | null | undefined, livoUserId:
   const root = resolve(livoUserWorkspaceRoot(livoUserId));
   const target = resolve(cwd);
   return pathBelongsToRoot(root, target);
+}
+
+export function filterLivoOwnedResources<T extends LivoOwnedResource>(
+  resources: T[],
+  livoSession: Pick<StoredLivoSession, "livoUserId"> | null,
+): T[] {
+  if (!livoSession) return resources;
+  return resources.filter((resource) => cwdBelongsToLivoUser(resource.cwd, livoSession.livoUserId));
+}
+
+export function filterLivoOwnedResourcesForRequest<T extends LivoOwnedResource>(req: Request, resources: T[]): T[] {
+  return filterLivoOwnedResources(resources, readLivoSession(req));
+}
+
+export function filterLivoOwnedCwdsForRequest(req: Request, cwds: string[]): string[] {
+  const livoSession = readLivoSession(req);
+  if (!livoSession) return cwds;
+  return cwds.filter((cwd) => cwdBelongsToLivoUser(cwd, livoSession.livoUserId));
 }
 
 export function realCwdBelongsToLivoUser(cwd: string | null | undefined, livoUserId: string): boolean {

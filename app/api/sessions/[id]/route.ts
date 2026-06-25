@@ -11,7 +11,7 @@ import {
 import { getRpcSession } from "@/lib/rpc-manager";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { readProductSessionMetadataMap } from "@/lib/scene-metadata";
-import { cwdBelongsToLivoUser, readLivoSession } from "@/lib/livo-sso";
+import { rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
@@ -113,13 +113,6 @@ function projectTreeForResponse<T extends { entry: { id: string }; children: T[]
   return projectedRoots;
 }
 
-function rejectLivoSessionOutsideWorkspace(req: Request, cwd: string | null | undefined): NextResponse | null {
-  const livoSession = readLivoSession(req);
-  if (!livoSession) return null;
-  if (cwdBelongsToLivoUser(cwd, livoSession.livoUserId)) return null;
-  return NextResponse.json({ error: "Session is outside current Livo workspace" }, { status: 403 });
-}
-
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -136,7 +129,7 @@ export async function GET(
 
     const sm = SessionManager.open(filePath);
     const header = sm.getHeader();
-    const rejectedByOwner = rejectLivoSessionOutsideWorkspace(req, header?.cwd);
+    const rejectedByOwner = rejectLivoCwdOutsideWorkspace(req, header?.cwd);
     if (rejectedByOwner) return rejectedByOwner;
 
     const entries = sm.getEntries() as never;
@@ -215,7 +208,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
     const sm = SessionManager.open(filePath);
-    const ownerRejected = rejectLivoSessionOutsideWorkspace(req, sm.getHeader()?.cwd);
+    const ownerRejected = rejectLivoCwdOutsideWorkspace(req, sm.getHeader()?.cwd);
     if (ownerRejected) return ownerRejected;
 
     sm.appendSessionInfo(name.trim());
@@ -242,7 +235,7 @@ export async function DELETE(
 
     try {
       const sm = SessionManager.open(filePath);
-      const ownerRejected = rejectLivoSessionOutsideWorkspace(req, sm.getHeader()?.cwd);
+      const ownerRejected = rejectLivoCwdOutsideWorkspace(req, sm.getHeader()?.cwd);
       if (ownerRejected) return ownerRejected;
     } catch {
       // Keep the existing delete error behavior for malformed or unreadable files.
@@ -258,7 +251,7 @@ export async function DELETE(
       cwd = header.cwd;
     } catch { /* ignore */ }
 
-    const ownerRejected = rejectLivoSessionOutsideWorkspace(req, cwd);
+    const ownerRejected = rejectLivoCwdOutsideWorkspace(req, cwd);
     if (ownerRejected) return ownerRejected;
 
     // Re-attach all direct children to this session's parent (cascade re-parent)

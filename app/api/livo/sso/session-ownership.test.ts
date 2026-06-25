@@ -8,6 +8,10 @@ const ownerRoot = vi.hoisted(() => ({ value: "" }));
 vi.mock("@/lib/livo-sso", () => ({
   readLivoSession: () => ({ livoUserId: "user-1", email: "user@example.com" }),
   cwdBelongsToLivoUser: (cwd: string, userId: string) => cwd === join(ownerRoot.value, "users", userId) || cwd.includes(`/users/${userId}/`),
+  filterLivoOwnedResourcesForRequest: <T extends { cwd?: string }>(_req: Request, resources: T[]) =>
+    resources.filter((resource) => resource.cwd === join(ownerRoot.value, "users", "user-1") || resource.cwd?.includes("/users/user-1/")),
+  filterLivoOwnedCwdsForRequest: (_req: Request, cwds: string[]) =>
+    cwds.filter((cwd) => cwd === join(ownerRoot.value, "users", "user-1") || cwd.includes("/users/user-1/")),
   livoUserWorkspaceRoot: (userId: string) => join(ownerRoot.value, "users", userId),
 }));
 
@@ -70,6 +74,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 vi.mock("@/lib/rpc-manager", () => ({
   getRpcSession: () => null,
+  startRpcSession: vi.fn(),
 }));
 
 vi.mock("@/lib/scene-metadata", () => ({
@@ -95,10 +100,71 @@ describe("Livo session ownership", () => {
     expect(json.projectCwds).toEqual(["/data/pi-agent/workspaces/livo/users/user-1/default"]);
   });
 
+  it("filters product history by livo user workspace", async () => {
+    const { GET } = await import("@/app/api/history/route");
+    const res = await GET(new Request("https://pi.gottao.com/api/history"));
+    const json = await res.json();
+
+    expect(json.history.map((item: { sessionId: string }) => item.sessionId)).toEqual(["owned"]);
+    expect(JSON.stringify(json)).not.toContain("other");
+    expect(JSON.stringify(json)).not.toContain("/users/user-2/");
+  });
+
+  it("hides another livo user's history item by id", async () => {
+    const { GET } = await import("@/app/api/history/[id]/route");
+    const res = await GET(
+      new Request("https://pi.gottao.com/api/history/other"),
+      { params: Promise.resolve({ id: "other" }) },
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it("computes usage from the current livo user's sessions only", async () => {
+    const { GET } = await import("@/app/api/usage/route");
+    const res = await GET(new Request("https://pi.gottao.com/api/usage"));
+    const json = await res.json();
+
+    expect(json.usage.totalRuns).toBe(1);
+  });
+
   it("rejects detail access outside livo user workspace", async () => {
     const { GET } = await import("@/app/api/sessions/[id]/route");
     const res = await GET(
       new Request("https://pi.gottao.com/api/sessions/other"),
+      { params: Promise.resolve({ id: "other" }) },
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects context access outside livo user workspace", async () => {
+    const { GET } = await import("@/app/api/sessions/[id]/context/route");
+    const res = await GET(
+      new Request("https://pi.gottao.com/api/sessions/other/context"),
+      { params: Promise.resolve({ id: "other" }) },
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects agent commands outside livo user workspace", async () => {
+    const { POST } = await import("@/app/api/agent/[id]/route");
+    const res = await POST(
+      new Request("https://pi.gottao.com/api/agent/other", {
+        method: "POST",
+        body: JSON.stringify({ type: "get_state" }),
+      }),
+      { params: Promise.resolve({ id: "other" }) },
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects agent state reads outside livo user workspace", async () => {
+    const { GET } = await import("@/app/api/agent/[id]/route");
+    const res = await GET(
+      new Request("https://pi.gottao.com/api/agent/other"),
       { params: Promise.resolve({ id: "other" }) },
     );
 

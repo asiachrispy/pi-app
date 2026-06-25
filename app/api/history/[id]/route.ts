@@ -3,6 +3,7 @@ import { listAllSessions } from "@/lib/session-reader";
 import { readProductSessionMetadataMap } from "@/lib/scene-metadata";
 import { buildHistoryItems } from "@/lib/product-history";
 import { requireApiAuth } from "@/lib/api-auth";
+import { filterLivoOwnedResourcesForRequest } from "@/lib/livo-sso";
 
 export async function GET(
   req: Request,
@@ -13,7 +14,7 @@ export async function GET(
 
   try {
     const { id } = await params;
-    const sessions = await listAllSessions();
+    const sessions = filterLivoOwnedResourcesForRequest(req, await listAllSessions());
     const item = buildHistoryItems(sessions, readProductSessionMetadataMap())
       .find((historyItem) => historyItem.sessionId === id);
 

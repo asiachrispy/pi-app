@@ -4,11 +4,28 @@ import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { requireApiAuth } from "@/lib/api-auth";
+import { hasLivoSession, rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
 
 async function sendToAgentSession(
+  req: Request,
   id: string,
   body: Record<string, unknown>,
 ): Promise<unknown> {
+  const filePath = await resolveSessionPath(id);
+  if (!filePath) {
+    const err = new Error("Session not found");
+    (err as Error & { status: number }).status = 404;
+    throw err;
+  }
+
+  const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
+  const rejectedByOwner = rejectLivoCwdOutsideWorkspace(req, cwd);
+  if (rejectedByOwner) {
+    const err = new Error("Session is outside current Livo workspace");
+    (err as Error & { status: number }).status = 403;
+    throw err;
+  }
+
   const existing = getRpcSession(id);
   if (existing?.isAlive()) {
     try {
@@ -23,14 +40,6 @@ async function sendToAgentSession(
     }
   }
 
-  const filePath = await resolveSessionPath(id);
-  if (!filePath) {
-    const err = new Error("Session not found");
-    (err as Error & { status: number }).status = 404;
-    throw err;
-  }
-
-  const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
   const { session } = await startRpcSession(id, filePath, cwd);
   return session.send(body);
 }
@@ -47,7 +56,7 @@ export async function POST(
 
   try {
     const body = await req.json() as { type: string; [key: string]: unknown };
-    const result = await sendToAgentSession(id, body);
+    const result = await sendToAgentSession(req, id, body);
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     const status = (error as Error & { status?: number }).status ?? 500;
@@ -66,6 +75,15 @@ export async function GET(
   const { id } = await params;
 
   try {
+    const filePath = await resolveSessionPath(id);
+    if (!filePath && hasLivoSession(req)) {
+      return NextResponse.json({ running: false }, { status: 404 });
+    }
+    if (filePath) {
+      const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
+      const rejectedByOwner = rejectLivoCwdOutsideWorkspace(req, cwd);
+      if (rejectedByOwner) return rejectedByOwner;
+    }
     const session = getRpcSession(id);
     if (!session || !session.isAlive()) {
       return NextResponse.json({ running: false });

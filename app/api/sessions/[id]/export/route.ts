@@ -7,6 +7,9 @@ import { promisify } from "util";
 import { fileURLToPath } from "url";
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { requireApiAuth } from "@/lib/api-auth";
+import { rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
 
 const execFileAsync = promisify(execFile);
 
@@ -43,9 +46,12 @@ async function getPiCliPath(): Promise<string> {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const rejected = requireApiAuth(req);
+  if (rejected) return rejected;
+
   const { id } = await params;
 
   try {
@@ -53,6 +59,9 @@ export async function GET(
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
+    const cwd = SessionManager.open(filePath).getHeader()?.cwd;
+    const rejectedByOwner = rejectLivoCwdOutsideWorkspace(req, cwd);
+    if (rejectedByOwner) return rejectedByOwner;
 
     const cliPath = await getPiCliPath();
     if (!existsSync(cliPath)) {

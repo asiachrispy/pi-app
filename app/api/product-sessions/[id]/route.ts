@@ -3,6 +3,7 @@ import { listAllSessions } from "@/lib/session-reader";
 import { readProductSessionMetadata, upsertProductSessionMetadata } from "@/lib/scene-metadata";
 import { sanitizePromptInput } from "@/lib/prompt-guard";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
+import { cwdBelongsToLivoUser, readLivoSession } from "@/lib/livo-sso";
 import type { ProductSessionMetadata, ProductSessionStatus } from "@/lib/scene-metadata";
 
 const SUMMARY_MAX_CHARS = 240;
@@ -79,7 +80,13 @@ export async function PATCH(
 
   try {
     const existing = readProductSessionMetadata(id);
-    const session = existing ? null : (await listAllSessions()).find((item) => item.id === id);
+    const livoSession = readLivoSession(req);
+    const session = (livoSession || !existing)
+      ? (await listAllSessions()).find((item) => item.id === id)
+      : null;
+    if (livoSession && (!session || !cwdBelongsToLivoUser(session.cwd, livoSession.livoUserId))) {
+      return NextResponse.json({ error: "Session is outside current Livo workspace" }, { status: 403 });
+    }
     if (!existing && !session) {
       return NextResponse.json({ error: "Session metadata not found" }, { status: 404 });
     }
