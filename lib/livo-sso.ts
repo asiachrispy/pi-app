@@ -138,7 +138,7 @@ export function livoUserWorkspaceRoot(livoUserId: string): string {
 
 function pathBelongsToRoot(root: string, target: string): boolean {
   const rel = relative(root, target);
-  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !rel.startsWith("/"));
+  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !isAbsolute(rel));
 }
 
 export function resolveLivoUserWorkspacePath(cwd: string | null | undefined, livoUserId: string): string | null {

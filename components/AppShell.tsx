@@ -22,7 +22,6 @@ import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import { SessionReportButton } from "./SessionReportButton";
 import type { ChatInputHandle } from "./ChatInput";
 import type { ProductHistoryItem } from "@/lib/product-history";
-import type { ToolMode } from "@/lib/pi-web-preferences";
 import { fetchSessionInfo } from "@/lib/fetch-session-info";
 import { hasFork } from "@/lib/branch-tree";
 import {
@@ -73,7 +72,6 @@ export function AppShell() {
   const topBarRef = useRef<HTMLDivElement>(null);
   const [workbenchView, setWorkbenchView] = useState<"home" | "settings" | "chat">("home");
   const [preferredCwd, setPreferredCwd] = useState<string | null>(null);
-  const [toolMode, setToolMode] = useState<ToolMode>("full");
   const [startingChat, setStartingChat] = useState(false);
   const [startChatError, setStartChatError] = useState<string | null>(null);
   const [sessionRestoreNotice, setSessionRestoreNotice] = useState<string | null>(null);
@@ -82,7 +80,6 @@ export function AppShell() {
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
   const branchLeafChangeFnRef = useRef<((leafId: string | null) => void) | null>(null);
-  const [branchNavigating, setBranchNavigating] = useState(false);
 
   const handleBranchDataChange = useCallback((tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => {
     setBranchTree(tree);
@@ -180,16 +177,13 @@ export function AppShell() {
     if (initialWorkspaceId) return;
     void fetch("/api/preferences")
       .then((res) => res.json())
-      .then((data: { preferences?: { defaultWorkspaceCwd?: string; toolMode?: ToolMode } }) => {
+      .then((data: { preferences?: Parameters<typeof cachePiWebPreferences>[0] }) => {
         if (data.preferences) {
           cachePiWebPreferences(data.preferences);
         }
         if (data.preferences?.defaultWorkspaceCwd) {
           setPreferredCwd(data.preferences.defaultWorkspaceCwd);
           setActiveCwd(data.preferences.defaultWorkspaceCwd);
-        }
-        if (data.preferences?.toolMode) {
-          setToolMode(data.preferences.toolMode);
         }
       })
       .catch(() => {});

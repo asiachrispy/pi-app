@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
-import { join, resolve } from "path";
+import { isAbsolute, join, relative, resolve } from "path";
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 
@@ -8,6 +8,11 @@ const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
 
 function livoRoot(): string {
   return resolve(process.env.PI_WEB_LIVO_WORKSPACE_ROOT || join(homedir(), "livo"));
+}
+
+function pathBelongsToRoot(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !isAbsolute(rel));
 }
 
 // GET /api/livo/summary?userId=...&meeting=...
@@ -32,7 +37,7 @@ export async function GET(req: Request) {
   // Resolve strictly under the user's own workspace; reject any escape.
   const userRoot = resolve(livoRoot(), "users", userId);
   const summaryPath = resolve(userRoot, "meetings", meetingId, "outputs", "summary.md");
-  if (summaryPath !== userRoot && !summaryPath.startsWith(userRoot + "/")) {
+  if (!pathBelongsToRoot(userRoot, summaryPath)) {
     return NextResponse.json({ error: "Path not allowed" }, { status: 403 });
   }
 
