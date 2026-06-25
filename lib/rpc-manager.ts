@@ -2,7 +2,7 @@ import { createAgentSession, DEFAULT_COMPACTION_SETTINGS, findCutPoint, SessionM
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAgentResourceLoader } from "@/lib/agent-resource-loader";
-import { getAgentDir } from "@/lib/agent-dir";
+import { currentAgentDir, currentSessionDir } from "@/lib/livo/tenant-gate";
 import { cacheSessionPath } from "./session-reader";
 import { lookupModel } from "./resolve-model";
 import { collectSlashCommands, type SlashCommandListSource } from "./slash-commands";
@@ -343,11 +343,14 @@ export async function startRpcSession(
   if (inflight) return inflight;
 
   const starting = (async () => {
-    const agentDir = getAgentDir();
+    // 方案二：在租户上下文内取该租户的 agentDir / sessionDir 并显式传给 pi 库。
+    // currentAgentDir/currentSessionDir 在非租户路径回退全局（行为不变）。
+    const agentDir = currentAgentDir();
+    const tenantSessionDir = currentSessionDir();
 
     const sessionManager = sessionFile
-      ? SessionManager.open(sessionFile, undefined)
-      : SessionManager.create(cwd, undefined);
+      ? SessionManager.open(sessionFile, tenantSessionDir)
+      : SessionManager.create(cwd, tenantSessionDir);
 
     // Determine which tools to pass based on requested toolNames.
     // Do NOT pass `tools` to createAgentSession as a filter — that would

@@ -12,6 +12,8 @@ import { getRpcSession } from "@/lib/rpc-manager";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { readProductSessionMetadataMap } from "@/lib/scene-metadata";
 import { rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
@@ -113,16 +115,16 @@ function projectTreeForResponse<T extends { entry: { id: string }; children: T[]
   return projectedRoots;
 }
 
-export async function GET(
+export const GET = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
 
   const { id } = await params;
   try {
-    const filePath = await resolveSessionPath(id);
+    const filePath = await resolveSessionPath(id, currentAgentDir());
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
@@ -139,7 +141,7 @@ export async function GET(
 
     let modified = header?.timestamp ?? new Date().toISOString();
     try { modified = statSync(filePath).mtime.toISOString(); } catch { /* use header timestamp */ }
-    const allSessions = await listAllSessions();
+    const allSessions = await listAllSessions(currentAgentDir());
     const parentSessionId = allSessions.find((s) => s.id === id)?.parentSessionId;
     const productMetadata = readProductSessionMetadataMap()[id];
     const info = header ? {
@@ -187,13 +189,13 @@ export async function GET(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});
 
 // PATCH /api/sessions/[id]  body: { name: string }
-export async function PATCH(
+export const PATCH = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
 
@@ -203,7 +205,7 @@ export async function PATCH(
     if (typeof name !== "string") {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
-    const filePath = await resolveSessionPath(id);
+    const filePath = await resolveSessionPath(id, currentAgentDir());
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
@@ -216,19 +218,19 @@ export async function PATCH(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/sessions/[id]
-export async function DELETE(
+export const DELETE = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
 
   const { id } = await params;
   try {
-    const filePath = await resolveSessionPath(id);
+    const filePath = await resolveSessionPath(id, currentAgentDir());
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
@@ -282,4 +284,4 @@ export async function DELETE(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});

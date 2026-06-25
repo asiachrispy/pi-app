@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import { getAgentDir } from "@/lib/agent-dir";
 import {
   cwdBelongsToLivoUser,
   livoUserWorkspaceRoot,
@@ -77,6 +78,27 @@ export function gate(): TenantGate {
 export function tenantGateOrNull(): TenantGate | null {
   const ctx = getTenantContext();
   return ctx ? new TenantGate(ctx) : null;
+}
+
+/**
+ * 解析"当前应使用的 agentDir"，供存储函数的必传 agentDir 参数显式取值：
+ *   listAllSessions(currentAgentDir())
+ *
+ * - 租户上下文内 → 该租户 agentDir（隔离）。
+ * - 非租户路径（CLI/loopback/Bearer）→ 全局 agentDir（行为不变）。
+ *
+ * 关键：调用点显式写出 `currentAgentDir()`，漏传仍是编译错误（满足方案二"必传"），
+ * 同时把"租户取 gate、非租户取全局"的分支收口到一处，避免每个 route 重复 if-else。
+ */
+export function currentAgentDir(): string {
+  const ctx = getTenantContext();
+  return ctx ? ctx.agentDir : getAgentDir();
+}
+
+/** 同理解析"当前 sessionDir"（租户单层 sessions/；非租户走 pi 默认，传 undefined）。 */
+export function currentSessionDir(): string | undefined {
+  const ctx = getTenantContext();
+  return ctx ? join(ctx.agentDir, "sessions") : undefined;
 }
 
 /** 由 Livo session 构造租户上下文（供 withTenant 使用）。 */

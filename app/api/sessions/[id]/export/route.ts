@@ -10,6 +10,8 @@ import { resolveSessionPath } from "@/lib/session-reader";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { requireApiAuth } from "@/lib/api-auth";
 import { rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 
 const execFileAsync = promisify(execFile);
 
@@ -45,17 +47,17 @@ async function getPiCliPath(): Promise<string> {
   );
 }
 
-export async function GET(
+export const GET = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const rejected = requireApiAuth(req);
   if (rejected) return rejected;
 
   const { id } = await params;
 
   try {
-    const filePath = await resolveSessionPath(id);
+    const filePath = await resolveSessionPath(id, currentAgentDir());
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
@@ -101,4 +103,4 @@ export async function GET(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});

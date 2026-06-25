@@ -4,7 +4,10 @@ import { runWithTenant } from "@/lib/livo/tenant-context";
 import { tenantContextFromLivoSession, TenantOwnershipError } from "@/lib/livo/tenant-gate";
 
 /** Next.js App Router route handler 形态。 */
-type RouteHandler<C = unknown> = (req: Request, ctx: C) => Promise<Response> | Response;
+type RouteHandler<C = unknown, R extends Request = Request> = (
+  req: R,
+  ctx: C,
+) => Promise<Response> | Response;
 
 /**
  * withTenant —— 给 Livo 可达 route 注入租户上下文（方案二入口层）。
@@ -20,8 +23,10 @@ type RouteHandler<C = unknown> = (req: Request, ctx: C) => Promise<Response> | R
  * 租户请求——非租户路径合法透传。真正的隔离强制在下游"必传 agentDir 参数"的
  * 类型签名上；fail-closed 体现在：一旦进入租户上下文，下游取不到 ctx 即 throw。
  */
-export function withTenant<C = unknown>(handler: RouteHandler<C>): RouteHandler<C> {
-  return async (req: Request, ctx: C): Promise<Response> => {
+export function withTenant<C = unknown, R extends Request = Request>(
+  handler: RouteHandler<C, R>,
+): RouteHandler<C, R> {
+  return async (req: R, ctx: C): Promise<Response> => {
     const livoSession = readLivoSession(req);
 
     const run = () => Promise.resolve(handler(req, ctx));

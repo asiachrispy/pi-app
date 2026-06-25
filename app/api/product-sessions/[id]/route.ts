@@ -4,6 +4,8 @@ import { readProductSessionMetadata, upsertProductSessionMetadata } from "@/lib/
 import { sanitizePromptInput } from "@/lib/prompt-guard";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { cwdBelongsToLivoUser, readLivoSession } from "@/lib/livo-sso";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 import type { ProductSessionMetadata, ProductSessionStatus } from "@/lib/scene-metadata";
 
 const SUMMARY_MAX_CHARS = 240;
@@ -17,10 +19,10 @@ function isProductSessionStatus(value: unknown): value is ProductSessionStatus {
   return typeof value === "string" && ALLOWED_STATUS.has(value as ProductSessionStatus);
 }
 
-export async function PATCH(
+export const PATCH = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
 
@@ -82,7 +84,7 @@ export async function PATCH(
     const existing = readProductSessionMetadata(id);
     const livoSession = readLivoSession(req);
     const session = (livoSession || !existing)
-      ? (await listAllSessions()).find((item) => item.id === id)
+      ? (await listAllSessions(currentAgentDir())).find((item) => item.id === id)
       : null;
     if (livoSession && (!session || !cwdBelongsToLivoUser(session.cwd, livoSession.livoUserId))) {
       return NextResponse.json({ error: "Session is outside current Livo workspace" }, { status: 403 });
@@ -111,4 +113,4 @@ export async function PATCH(
       { status: 500 },
     );
   }
-}
+});

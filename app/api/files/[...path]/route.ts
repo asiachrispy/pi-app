@@ -9,6 +9,8 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { loadPiWebPreferences } from "@/lib/pi-web-preferences";
 import { getCachedAllowedRoots, setCachedAllowedRoots } from "@/lib/allowed-roots-cache";
 import { livoUserWorkspaceRoot, readLivoSession } from "@/lib/livo-sso";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -105,7 +107,7 @@ async function getAllowedRoots(): Promise<Set<string>> {
   const cached = getCachedAllowedRoots(now);
   if (cached) return cached;
 
-  const sessions = await listAllSessions();
+  const sessions = await listAllSessions(currentAgentDir());
   const roots = new Set<string>();
   for (const s of sessions) {
     if (s.cwd) roots.add(s.cwd);
@@ -307,10 +309,10 @@ ${bodyHtml}
 </html>`;
 }
 
-export async function GET(
+export const GET = withTenant(async (
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
-) {
+) => {
   const rejected = requireApiAuth(request);
   if (rejected) return rejected;
 
@@ -328,7 +330,7 @@ export async function GET(
     const sessionId = request.nextUrl.searchParams.get("sessionId");
     let referencedFiles: Set<string> | null = null;
     const referenced = async (): Promise<Set<string>> =>
-      (referencedFiles ??= sessionId && !livoSession ? await collectSessionReferencedFiles(sessionId) : new Set<string>());
+      (referencedFiles ??= sessionId && !livoSession ? await collectSessionReferencedFiles(sessionId, currentAgentDir()) : new Set<string>());
 
     if (!isPathAllowed(filePath, allowedRoots) && !isReferencedFileAllowed(filePath, await referenced())) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
@@ -505,4 +507,4 @@ export async function GET(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});

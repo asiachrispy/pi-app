@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { SessionManager, buildSessionContext as piBuildSessionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, getDefaultAgentDir } from "@/lib/agent-dir";
 import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, SessionMessageEntry, AssistantMessage } from "./types";
@@ -15,23 +15,28 @@ export function getSessionsDir(): string {
   return `${getAgentDir()}/sessions`;
 }
 
-async function listSessionsForAgentRoot(agentRoot: string): Promise<PiSessionInfo[]> {
-  const envKey = "PI_CODING_AGENT_DIR";
-  const prev = process.env[envKey];
-  process.env[envKey] = agentRoot;
-  try {
-    return await SessionManager.listAll();
-  } finally {
-    if (prev === undefined) {
-      delete process.env[envKey];
-    } else {
-      process.env[envKey] = prev;
-    }
+/**
+ * 列出某 agentDir 下的所有 pi session（方案二：agentDir 必传，显式隔离）。
+ *
+ * 关键：session 存储布局有两种，listAll 的调用方式不同：
+ * - 全局/非租户 agentDir：两层 `{agentDir}/sessions/{encode(cwd)}/*.jsonl`，
+ *   必须用无参 `listAll()`（它会扫 sessions 下所有 cwd 子目录）。
+ * - 租户 agentDir：单层 `{agentDir}/sessions/*.jsonl`，用 `listAll(sessionDir)`
+ *   （只扫该目录一层）。
+ *
+ * 判定依据：传入的 agentDir 是否等于全局 agentDir。租户 agentDir 永远 !== 全局。
+ */
+async function listPiSessions(agentDir: string): Promise<PiSessionInfo[]> {
+  const isGlobal = resolve(agentDir) === resolve(getDefaultAgentDir());
+  if (isGlobal) {
+    return SessionManager.listAll();
   }
+  // 租户单层布局：直接列 sessions 目录。
+  return SessionManager.listAll(join(agentDir, "sessions"));
 }
 
-/** Project picker cwds: active agent dir plus prod (~/.pi/agent) when dev is isolated. */
-export async function listProjectCwdsForPicker(): Promise<string[]> {
+/** Project picker cwds（方案二：agentDir 必传）。租户只列自己 agentDir 下的 cwd。 */
+export async function listProjectCwdsForPicker(agentDir: string): Promise<string[]> {
   const merged: Array<{ cwd: string; modified: string }> = [];
   const appendSessions = (sessions: PiSessionInfo[]) => {
     for (const session of sessions) {
@@ -43,13 +48,15 @@ export async function listProjectCwdsForPicker(): Promise<string[]> {
     }
   };
 
-  appendSessions(await SessionManager.listAll());
+  appendSessions(await listPiSessions(agentDir));
 
-  const agentDir = getAgentDir();
+  // 非租户（全局）场景下，dev 隔离时额外并入 prod sessions dir（保留原行为）。
+  // 租户 agentDir 不并入全局，确保隔离。
+  const isGlobal = resolve(agentDir) === resolve(getDefaultAgentDir());
   const defaultDir = getDefaultAgentDir();
-  if (resolve(agentDir) !== resolve(defaultDir)) {
+  if (isGlobal && resolve(getAgentDir()) !== resolve(defaultDir)) {
     try {
-      appendSessions(await listSessionsForAgentRoot(defaultDir));
+      appendSessions(await SessionManager.listAll());
     } catch {
       // ignore unreadable prod sessions dir
     }
@@ -63,15 +70,13 @@ export async function listProjectCwdsForPicker(): Promise<string[]> {
       cwds.push(cwd);
     }
   }
-  // User explicitly hid these from the project picker. Session files are
-  // preserved on disk — they are only hidden from the dropdown. Filtered last
-  // so the dedup above can still dedupe an excluded cwd against a session cwd.
   const excluded = new Set(prefs.excludedProjectCwds ?? []);
   return excluded.size === 0 ? cwds : cwds.filter((cwd) => !excluded.has(cwd));
 }
 
-export async function listAllSessions(): Promise<SessionInfo[]> {
-  const piSessions: PiSessionInfo[] = await SessionManager.listAll();
+/** 列出某 agentDir 下所有 session 的展示信息（方案二：agentDir 必传）。 */
+export async function listAllSessions(agentDir: string): Promise<SessionInfo[]> {
+  const piSessions: PiSessionInfo[] = await listPiSessions(agentDir);
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(s.path, s.id);
   const productMetadata = readProductSessionMetadataMap();
@@ -111,12 +116,12 @@ function getPathCache(): Map<string, string> {
   return globalThis.__piSessionPathCache;
 }
 
-export async function resolveSessionPath(sessionId: string): Promise<string | null> {
+export async function resolveSessionPath(sessionId: string, agentDir: string): Promise<string | null> {
   const cached = getPathCache().get(sessionId);
   if (cached) return cached;
 
-  // Cache miss: scan all sessions to populate cache, then retry
-  await listAllSessions();
+  // Cache miss: scan all sessions in this agentDir to populate cache, then retry
+  await listAllSessions(agentDir);
   return getPathCache().get(sessionId) ?? null;
 }
 
@@ -155,7 +160,7 @@ function getRefFilesCache(): Map<string, { files: Set<string>; expiresAt: number
  * files the conversation actually touched even when they sit outside the
  * cwd-derived allowed roots. Cached briefly to avoid rescanning transcripts.
  */
-export async function collectSessionReferencedFiles(sessionId: string): Promise<Set<string>> {
+export async function collectSessionReferencedFiles(sessionId: string, agentDir: string): Promise<Set<string>> {
   const now = Date.now();
   const cache = getRefFilesCache();
   const cached = cache.get(sessionId);
@@ -167,12 +172,12 @@ export async function collectSessionReferencedFiles(sessionId: string): Promise<
     return files;
   };
 
-  const filePath = await resolveSessionPath(sessionId);
+  const filePath = await resolveSessionPath(sessionId, agentDir);
   if (!filePath) return store();
 
   let cwd: string | undefined;
   try {
-    const sessions = await listAllSessions();
+    const sessions = await listAllSessions(agentDir);
     cwd = sessions.find((s) => s.id === sessionId)?.cwd;
   } catch {
     // Without a cwd we simply skip relative paths below.

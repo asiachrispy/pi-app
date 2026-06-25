@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, resolveSessionPath } from "@/lib/session-reader";
+import { getDefaultAgentDir } from "@/lib/agent-dir";
 import { resolveSessionShare } from "@/lib/session-share";
 import { readProductSessionMetadataMap } from "@/lib/scene-metadata";
 import { buildSharedConversationMessages } from "@/lib/shared-conversation";
@@ -15,7 +16,9 @@ export async function GET(
     return NextResponse.json({ error: "Share link not found" }, { status: 404 });
   }
 
-  const filePath = await resolveSessionPath(share.sessionId);
+  // 公开分享路径无 Livo session，本期用全局 agentDir 解析（分享是已有的全局功能）。
+  // TODO(multi-tenant): 分享的租户化需在 share 记录里存 agentDir/sessionDir，后续补。
+  const filePath = await resolveSessionPath(share.sessionId, getDefaultAgentDir());
   if (!filePath) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }

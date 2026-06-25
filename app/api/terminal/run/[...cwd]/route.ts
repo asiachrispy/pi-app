@@ -12,6 +12,8 @@ import { isPathAllowed, filePathFromSegments } from "@/lib/file-access";
 import { listAllSessions } from "@/lib/session-reader";
 import { getAgentDir } from "@/lib/agent-dir";
 import { readLivoSession, realCwdBelongsToLivoUser } from "@/lib/livo-sso";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 import os from "os";
 import path from "path";
 import fs from "fs";
@@ -24,7 +26,7 @@ async function getAllowedRoots(): Promise<Set<string>> {
   const now = Date.now();
   const cached = globalThis.__piTerminalRunAllowedRootsCache;
   if (cached && cached.expiresAt > now) return cached.roots;
-  const sessions = await listAllSessions();
+  const sessions = await listAllSessions(currentAgentDir());
   const roots = new Set<string>();
   for (const s of sessions) if (s.cwd) roots.add(s.cwd);
   roots.add(getAgentDir());
@@ -38,10 +40,10 @@ async function getAllowedRoots(): Promise<Set<string>> {
   return roots;
 }
 
-export async function POST(
+export const POST = withTenant(async (
   request: NextRequest,
   ctx: { params: Promise<{ cwd: string[] }> },
-) {
+) => {
   const disabled = rejectDisabledTerminal();
   if (disabled) return disabled;
 
@@ -85,4 +87,4 @@ export async function POST(
     );
   }
   return NextResponse.json({ pid: result.pid, startedAt: result.startedAt }, { status: 202 });
-}
+});

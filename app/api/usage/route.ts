@@ -5,8 +5,10 @@ import { buildHistoryItems } from "@/lib/product-history";
 import { buildUsageSummary, buildUsageTimeline } from "@/lib/usage";
 import { requireApiAuth } from "@/lib/api-auth";
 import { filterLivoOwnedResourcesForRequest } from "@/lib/livo-sso";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 
-export async function GET(req: Request) {
+export const GET = withTenant(async (req: Request) => {
   const rejected = requireApiAuth(req);
   if (rejected) return rejected;
 
@@ -15,7 +17,7 @@ export async function GET(req: Request) {
     const daysParam = searchParams.get("days");
     const days = daysParam ? Math.min(30, Math.max(1, Number.parseInt(daysParam, 10) || 7)) : null;
 
-    const sessions = filterLivoOwnedResourcesForRequest(req, await listAllSessions());
+    const sessions = filterLivoOwnedResourcesForRequest(req, await listAllSessions(currentAgentDir()));
     const metadata = readProductSessionMetadataMap();
     const history = buildHistoryItems(sessions, metadata);
     const usage = buildUsageSummary(history);
@@ -29,4 +31,4 @@ export async function GET(req: Request) {
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});

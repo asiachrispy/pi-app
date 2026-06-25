@@ -4,17 +4,19 @@ import { readProductSessionMetadataMap } from "@/lib/scene-metadata";
 import { buildHistoryItems } from "@/lib/product-history";
 import { requireApiAuth } from "@/lib/api-auth";
 import { filterLivoOwnedResourcesForRequest } from "@/lib/livo-sso";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 
-export async function GET(
+export const GET = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const rejected = requireApiAuth(req);
   if (rejected) return rejected;
 
   try {
     const { id } = await params;
-    const sessions = filterLivoOwnedResourcesForRequest(req, await listAllSessions());
+    const sessions = filterLivoOwnedResourcesForRequest(req, await listAllSessions(currentAgentDir()));
     const item = buildHistoryItems(sessions, readProductSessionMetadataMap())
       .find((historyItem) => historyItem.sessionId === id);
 
@@ -25,4 +27,4 @@ export async function GET(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});

@@ -5,13 +5,15 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { requireApiAuth } from "@/lib/api-auth";
 import { hasLivoSession, rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 
 async function sendToAgentSession(
   req: Request,
   id: string,
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const filePath = await resolveSessionPath(id);
+  const filePath = await resolveSessionPath(id, currentAgentDir());
   if (!filePath) {
     const err = new Error("Session not found");
     (err as Error & { status: number }).status = 404;
@@ -45,10 +47,10 @@ async function sendToAgentSession(
 }
 
 // POST /api/agent/[id] - Send a command to an existing session
-export async function POST(
+export const POST = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
 
@@ -62,20 +64,20 @@ export async function POST(
     const status = (error as Error & { status?: number }).status ?? 500;
     return NextResponse.json({ error: String(error) }, { status });
   }
-}
+});
 
 // GET /api/agent/[id] - Get current agent state
-export async function GET(
+export const GET = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const rejected = requireApiAuth(req);
   if (rejected) return rejected;
 
   const { id } = await params;
 
   try {
-    const filePath = await resolveSessionPath(id);
+    const filePath = await resolveSessionPath(id, currentAgentDir());
     if (!filePath && hasLivoSession(req)) {
       return NextResponse.json({ running: false }, { status: 404 });
     }
@@ -94,4 +96,4 @@ export async function GET(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});
