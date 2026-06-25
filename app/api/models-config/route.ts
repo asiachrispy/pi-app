@@ -6,6 +6,7 @@ import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { requireApiAuth } from "@/lib/api-auth";
 import { normalizeModelsJson, type NormalizedModelsJson } from "@/lib/models-config-normalize";
 import { destroyAllRpcSessions } from "@/lib/rpc-manager";
+import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,8 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
+  const livoRejected = rejectLivoGlobalConfigWrite(req);
+  if (livoRejected) return livoRejected;
 
   try {
     const body = await req.json() as Record<string, unknown>;

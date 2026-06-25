@@ -27,8 +27,13 @@ describe("listProjectCwdsForPicker", () => {
   });
 
   it("merges prod session cwds when dev agent dir is isolated", async () => {
+    // 新签名：传 global agentDir（/prod/pi-agent）。global 分支下 getAgentDir(/dev)
+    // !== getDefaultAgentDir(/prod) 时，额外并入一次无参 listAll 的 prod sessions。
+    let call = 0;
     listAllMock.mockImplementation(() => {
-      if (process.env.PI_CODING_AGENT_DIR === "/prod/pi-agent") {
+      call += 1;
+      // 第二次调用（合并 prod）返回更全的列表
+      if (call >= 2) {
         return [
           { cwd: "/Users/mk/codespace/pi", modified: new Date("2026-06-01") },
           { cwd: "/Users/mk/codespace/pi-web", modified: new Date("2026-06-02") },
@@ -39,7 +44,7 @@ describe("listProjectCwdsForPicker", () => {
     });
 
     const { listProjectCwdsForPicker } = await import("./session-reader");
-    const cwds = await listProjectCwdsForPicker();
+    const cwds = await listProjectCwdsForPicker("/prod/pi-agent");
 
     expect(cwds).toContain("/Users/mk/codespace/pi-web");
     expect(cwds).toContain("/Users/mk/codespace/AmzLT");
@@ -57,7 +62,7 @@ describe("listProjectCwdsForPicker", () => {
     ]);
 
     const { listProjectCwdsForPicker } = await import("./session-reader");
-    const cwds = await listProjectCwdsForPicker();
+    const cwds = await listProjectCwdsForPicker("/prod/pi-agent");
 
     expect(cwds).toEqual(["/Users/mk/codespace/pi-web"]);
     expect(cwds).not.toContain(tempCwdA);
@@ -72,7 +77,7 @@ describe("listProjectCwdsForPicker", () => {
     ]);
 
     const { listProjectCwdsForPicker } = await import("./session-reader");
-    const cwds = await listProjectCwdsForPicker();
+    const cwds = await listProjectCwdsForPicker("/prod/pi-agent");
 
     expect(cwds).toEqual(["/Users/mk/codespace/pi-web"]);
   });
@@ -84,7 +89,7 @@ describe("listProjectCwdsForPicker", () => {
     ]);
 
     const { listProjectCwdsForPicker } = await import("./session-reader");
-    const cwds = await listProjectCwdsForPicker();
+    const cwds = await listProjectCwdsForPicker("/prod/pi-agent");
 
     expect(cwds).toContain("/Users/mk/pi-cwd-20260603");
     expect(cwds).toContain("/Users/mk/codespace/pi-web");
@@ -97,7 +102,7 @@ describe("listProjectCwdsForPicker", () => {
     ]);
 
     const { listProjectCwdsForPicker } = await import("./session-reader");
-    const cwds = await listProjectCwdsForPicker();
+    const cwds = await listProjectCwdsForPicker("/prod/pi-agent");
 
     expect(cwds).toContain("/Users/mk/scratch/new-proj");
     expect(cwds).toContain("/Users/mk/codespace/pi-web");
@@ -113,7 +118,7 @@ describe("listProjectCwdsForPicker", () => {
     ]);
 
     const { listProjectCwdsForPicker } = await import("./session-reader");
-    const cwds = await listProjectCwdsForPicker();
+    const cwds = await listProjectCwdsForPicker("/prod/pi-agent");
 
     expect(cwds).not.toContain("/Users/mk/codespace/pi-web");
     expect(cwds).toContain("/Users/mk/codespace/pi");
@@ -130,7 +135,7 @@ describe("listProjectCwdsForPicker", () => {
     ]);
 
     const { listProjectCwdsForPicker } = await import("./session-reader");
-    const cwds = await listProjectCwdsForPicker();
+    const cwds = await listProjectCwdsForPicker("/prod/pi-agent");
 
     expect(cwds).toEqual(["/Users/mk/codespace/pi"]);
   });

@@ -3,12 +3,15 @@ import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@/lib/agent-dir";
 import { isModelAvailable } from "@/lib/available-models";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
+import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
 
 export const dynamic = "force-dynamic";
 
 export async function PUT(req: Request) {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
+  const livoRejected = rejectLivoGlobalConfigWrite(req);
+  if (livoRejected) return livoRejected;
 
   try {
     const body = await req.json() as { provider?: string; modelId?: string };

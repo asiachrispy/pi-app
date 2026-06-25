@@ -22,6 +22,7 @@ vi.mock("@/lib/livo-sso", () => ({
   readLivoSession: () => livoSession.value,
   cwdBelongsToLivoUser: (cwd: string | null | undefined, userId: string) =>
     Boolean(cwd?.includes(`/users/${userId}/`)),
+  livoUserWorkspaceRoot: (userId: string) => `/data/pi-agent/workspaces/livo/users/${userId}`,
 }));
 
 const buildRequest = (body: unknown, headers: Record<string, string> = {}): Request => {

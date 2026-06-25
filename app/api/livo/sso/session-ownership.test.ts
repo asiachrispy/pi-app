@@ -93,7 +93,7 @@ describe("Livo session ownership", () => {
 
   it("filters sessions and picker cwd list by livo user workspace", async () => {
     const { GET } = await import("@/app/api/sessions/route");
-    const res = await GET(new Request("https://pi.gottao.com/api/sessions"));
+    const res = await GET(new Request("https://pi.gottao.com/api/sessions"), undefined);
     const json = await res.json();
 
     expect(json.sessions.map((s: { id: string }) => s.id)).toEqual(["owned"]);
@@ -102,7 +102,7 @@ describe("Livo session ownership", () => {
 
   it("filters product history by livo user workspace", async () => {
     const { GET } = await import("@/app/api/history/route");
-    const res = await GET(new Request("https://pi.gottao.com/api/history"));
+    const res = await GET(new Request("https://pi.gottao.com/api/history"), undefined);
     const json = await res.json();
 
     expect(json.history.map((item: { sessionId: string }) => item.sessionId)).toEqual(["owned"]);
@@ -122,7 +122,7 @@ describe("Livo session ownership", () => {
 
   it("computes usage from the current livo user's sessions only", async () => {
     const { GET } = await import("@/app/api/usage/route");
-    const res = await GET(new Request("https://pi.gottao.com/api/usage"));
+    const res = await GET(new Request("https://pi.gottao.com/api/usage"), undefined);
     const json = await res.json();
 
     expect(json.usage.totalRuns).toBe(1);
