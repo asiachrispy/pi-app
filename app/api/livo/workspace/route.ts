@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { join, resolve } from "path";
+import { isAbsolute, join, relative, resolve } from "path";
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
@@ -16,6 +16,11 @@ function safeSegment(value: unknown, field: string): string | NextResponse {
     return NextResponse.json({ error: `Invalid ${field}` }, { status: 400 });
   }
   return value;
+}
+
+function isInside(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !isAbsolute(rel));
 }
 
 // POST /api/livo/workspace  body: { userId: string; meetingId: string }
@@ -40,6 +45,10 @@ export async function POST(req: Request) {
     const root = livoRoot();
     const cwd = resolve(root, "users", userId);
     const meetingPath = resolve(cwd, "meetings", meetingId);
+    if (!isInside(root, cwd) || !isInside(root, meetingPath)) {
+      return NextResponse.json({ error: "Workspace escapes Livo root" }, { status: 400 });
+    }
+
     mkdirSync(cwd, { recursive: true });
     mkdirSync(join(meetingPath, "inputs"), { recursive: true });
     mkdirSync(join(meetingPath, "working"), { recursive: true });

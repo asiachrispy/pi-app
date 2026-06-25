@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { createHmac } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,6 +61,35 @@ describe("livo sso", () => {
     const value = issueSessionCookieValue("missing-session", Date.now() + 60_000, "test-secret-32-byte-minimum-value");
 
     expect(readLivoSessionCookieValue(value)).toBeNull();
+  });
+
+  it("reads legacy sessions stored by hashed sid key", async () => {
+    const secret = "test-secret-32-byte-minimum-value";
+    const sid = "legacy-session-id";
+    const expiresAt = new Date(Date.now() + 60_000);
+    const legacyKey = createHmac("sha256", secret).update(sid).digest("base64url");
+    mkdirSync(join(agentDir.value, "auth"), { recursive: true });
+    writeFileSync(
+      join(agentDir.value, "auth", "livo-sessions.json"),
+      JSON.stringify({
+        [legacyKey]: {
+          livoUserId: "user-legacy",
+          email: "legacy@example.com",
+          sidHash: legacyKey,
+          createdAt: new Date().toISOString(),
+          expiresAt: expiresAt.toISOString(),
+        },
+      }),
+    );
+    const { readLivoSessionCookieValue } = await import("./livo-sso");
+    const { issueSessionCookieValue } = await import("./signed-session-cookie");
+    const value = issueSessionCookieValue(sid, expiresAt.getTime(), secret);
+
+    const read = readLivoSessionCookieValue(value);
+
+    expect(read?.livoUserId).toBe("user-legacy");
+    expect(read?.email).toBe("legacy@example.com");
+    expect(read?.storeKey).toBe(legacyKey);
   });
 
   it("resolves livo custom paths inside the current user's workspace only", async () => {
