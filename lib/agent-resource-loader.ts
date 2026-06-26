@@ -4,6 +4,8 @@ import {
   type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import { PI_WEB_SKILL_WORKFLOW_APPEND } from "@/lib/skill-system-prompt";
+import { defaultLivoPluginPaths } from "@/lib/livo-default-plugins";
+import { isTenantAgentDir } from "@/lib/session-reader";
 
 /**
  * Resource loader for in-process AgentSession; adds Pi Web skill workflow guidance.
@@ -12,10 +14,12 @@ import { PI_WEB_SKILL_WORKFLOW_APPEND } from "@/lib/skill-system-prompt";
  */
 export async function createAgentResourceLoader(cwd: string, agentDir: string): Promise<ResourceLoader> {
   const settingsManager = SettingsManager.create(cwd, agentDir);
+  const defaultPluginPaths = isTenantAgentDir(agentDir) ? defaultLivoPluginPaths() : [];
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
     settingsManager,
+    ...(defaultPluginPaths.length ? { additionalExtensionPaths: defaultPluginPaths } : {}),
     appendSystemPrompt: [PI_WEB_SKILL_WORKFLOW_APPEND],
   });
   await loader.reload();

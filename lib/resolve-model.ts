@@ -1,6 +1,6 @@
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
-import { getDefaultAgentDir } from "@/lib/agent-dir";
+import { getAgentDir } from "@/lib/agent-dir";
 import type { AgentSessionLike, ModelLike } from "@/lib/pi-types";
 
 type ModelRegistryLike = AgentSessionLike["modelRegistry"];
@@ -11,16 +11,21 @@ function findInRegistry(registry: ModelRegistryLike, provider: string, modelId: 
     ?? registry.getAll().find((m) => m.provider === provider && m.id.toLowerCase() === modelId.toLowerCase());
 }
 
-// 方案二（统一付费）：凭证与模型配置钉死全局 agentDir，绝不随租户切换。
-// 用 getDefaultAgentDir()（永远 ~/.pi/agent）而非 getAgentDir()，即便将来后者被
-// 改造也不受影响——所有租户共享同一份 auth.json / models.json。
-const GLOBAL_AGENT_DIR = getDefaultAgentDir();
+// 方案二（统一付费）：凭证与模型配置钉死进程级全局 agentDir，绝不随租户切换。
+// 在 pi.gottao.com 上该目录由 PI_CODING_AGENT_DIR=/data/pi-agent 指定；租户
+// currentAgentDir() 会切到用户目录，但 getAgentDir() 仍保持全局配置根。
+export function createGlobalModelConfig(): { authStorage: AuthStorage; modelRegistry: ModelRegistry } {
+  const agentDir = getAgentDir();
+  const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
+  return {
+    authStorage,
+    modelRegistry: ModelRegistry.create(authStorage, join(agentDir, "models.json")),
+  };
+}
 
 function createDiskRegistry(): ModelRegistry {
-  return ModelRegistry.create(
-    AuthStorage.create(join(GLOBAL_AGENT_DIR, "auth.json")),
-    join(GLOBAL_AGENT_DIR, "models.json"),
-  );
+  const { modelRegistry } = createGlobalModelConfig();
+  return modelRegistry;
 }
 
 /** Resolve a model from the live session registry, refreshing from disk first. */

@@ -4,10 +4,43 @@ const sessionManagerMock = vi.hoisted(() => ({
   open: vi.fn(),
   create: vi.fn(),
 }));
+const agentSessionMock = vi.hoisted(() => ({
+  createAgentSession: vi.fn(),
+}));
+const tenantMock = vi.hoisted(() => ({
+  currentAgentDir: vi.fn(() => "/tmp/global-agent"),
+  currentSessionDir: vi.fn(() => undefined as string | undefined),
+}));
+const resourceLoaderMock = vi.hoisted(() => ({
+  createAgentResourceLoader: vi.fn(async () => ({
+    getExtensions: () => ({ extensions: [] }),
+  })),
+}));
+const modelConfigMock = vi.hoisted(() => ({
+  createGlobalModelConfig: vi.fn(() => ({
+    authStorage: { source: "global-auth" },
+    modelRegistry: { source: "global-models" },
+  })),
+  lookupModel: vi.fn(),
+}));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
-  createAgentSession: vi.fn(),
+  createAgentSession: agentSessionMock.createAgentSession,
   SessionManager: sessionManagerMock,
+}));
+
+vi.mock("@/lib/agent-resource-loader", () => ({
+  createAgentResourceLoader: resourceLoaderMock.createAgentResourceLoader,
+}));
+
+vi.mock("@/lib/livo/tenant-gate", () => ({
+  currentAgentDir: tenantMock.currentAgentDir,
+  currentSessionDir: tenantMock.currentSessionDir,
+}));
+
+vi.mock("./resolve-model", () => ({
+  createGlobalModelConfig: modelConfigMock.createGlobalModelConfig,
+  lookupModel: modelConfigMock.lookupModel,
 }));
 
 describe("AgentSessionWrapper", () => {
@@ -202,5 +235,50 @@ describe("AgentSessionWrapper", () => {
     expect(sessionManagerMock.open).toHaveBeenNthCalledWith(1, "/tmp/sessions/source.jsonl", "/tmp/sessions");
     expect(sessionManagerMock.open).toHaveBeenNthCalledWith(2, "/tmp/sessions/clone.jsonl", "/tmp/sessions");
     await expect(wrapper.send({ type: "get_session_stats" })).rejects.toThrow("Session is closed");
+  });
+});
+
+describe("startRpcSession", () => {
+  beforeEach(() => {
+    agentSessionMock.createAgentSession.mockReset();
+    sessionManagerMock.create.mockReset();
+    tenantMock.currentAgentDir.mockReset();
+    tenantMock.currentSessionDir.mockReset();
+    resourceLoaderMock.createAgentResourceLoader.mockClear();
+    modelConfigMock.createGlobalModelConfig.mockClear();
+    tenantMock.currentAgentDir.mockReturnValue("/tmp/livo/user-1/.pi-agent");
+    tenantMock.currentSessionDir.mockReturnValue("/tmp/livo/user-1/.pi-agent/sessions");
+    sessionManagerMock.create.mockReturnValue({ getCwd: () => "/tmp/livo/user-1" });
+    agentSessionMock.createAgentSession.mockResolvedValue({
+      session: {
+        sessionId: "session-1",
+        sessionFile: "/tmp/livo/user-1/.pi-agent/sessions/session-1.jsonl",
+        subscribe: vi.fn(() => vi.fn()),
+        setAutoCompactionEnabled: vi.fn(),
+        setAutoRetryEnabled: vi.fn(),
+        setActiveToolsByName: vi.fn(),
+      },
+    });
+  });
+
+  it("uses tenant dirs for sessions/resources but global auth and model registry", async () => {
+    const { startRpcSession } = await import("./rpc-manager");
+
+    await startRpcSession("__new__1", "", "/tmp/livo/user-1", ["read"]);
+
+    expect(sessionManagerMock.create).toHaveBeenCalledWith(
+      "/tmp/livo/user-1",
+      "/tmp/livo/user-1/.pi-agent/sessions",
+    );
+    expect(resourceLoaderMock.createAgentResourceLoader).toHaveBeenCalledWith(
+      "/tmp/livo/user-1",
+      "/tmp/livo/user-1/.pi-agent",
+    );
+    expect(modelConfigMock.createGlobalModelConfig).toHaveBeenCalledOnce();
+    expect(agentSessionMock.createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      agentDir: "/tmp/livo/user-1/.pi-agent",
+      authStorage: { source: "global-auth" },
+      modelRegistry: { source: "global-models" },
+    }));
   });
 });

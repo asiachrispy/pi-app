@@ -52,6 +52,7 @@ proc ops_require_password {} {
 ops_load_env
 ops_require_password
 set host [ops_env_or_default OPS_SSH_HOST "ubuntu@43.138.130.199"]
+set pi_default_plugins_cmd {install -d -o piagent -g piagent /data/pi-agent/npm; if test ! -f /data/pi-agent/npm/package.json; then printf "%s\n" "{\"name\":\"pi-extensions\",\"private\":true}" > /data/pi-agent/npm/package.json; chown piagent:piagent /data/pi-agent/npm/package.json; fi; sudo -u piagent env HOME=/data/pi-agent/workspaces PI_CODING_AGENT_DIR=/data/pi-agent /usr/local/node/bin/npm --prefix /data/pi-agent/npm install --omit=dev --no-audit --no-fund pi-skills-sh pi-mcp-extension pi-search-hub pi-agent-browser-native; echo PI_DEFAULT_PLUGINS_OK}
 
 proc ops_scp {local_path remote_path {timeout_sec 300}} {
     global password host

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createAgentResourceLoader } from "@/lib/agent-resource-loader";
 import { currentAgentDir, currentSessionDir } from "@/lib/livo/tenant-gate";
 import { cacheSessionPath } from "./session-reader";
-import { lookupModel } from "./resolve-model";
+import { createGlobalModelConfig, lookupModel } from "./resolve-model";
 import { collectSlashCommands, type SlashCommandListSource } from "./slash-commands";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
 
@@ -368,9 +368,12 @@ export async function startRpcSession(
 
     const resourceLoader = await createAgentResourceLoader(cwd, agentDir);
 
+    const { authStorage, modelRegistry } = createGlobalModelConfig();
     const { session: inner } = await createAgentSession({
       cwd,
       agentDir,
+      authStorage,
+      modelRegistry,
       sessionManager,
       resourceLoader,
       ...(noTools ? { noTools } : {}),

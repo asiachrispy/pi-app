@@ -45,7 +45,11 @@ import {
 // events and the col-resize cursor stays consistent.
 const DRAG_OVERLAY_Z_INDEX = 1000;
 
-export function AppShell() {
+interface AppShellProps {
+  initialDefaultCwd?: string | null;
+}
+
+export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -71,7 +75,7 @@ export function AppShell() {
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
   const [workbenchView, setWorkbenchView] = useState<"home" | "settings" | "chat">("home");
-  const [preferredCwd, setPreferredCwd] = useState<string | null>(null);
+  const [preferredCwd, setPreferredCwd] = useState<string | null>(initialDefaultCwd);
   const [startingChat, setStartingChat] = useState(false);
   const [startChatError, setStartChatError] = useState<string | null>(null);
   const [sessionRestoreNotice, setSessionRestoreNotice] = useState<string | null>(null);
@@ -166,7 +170,7 @@ export function AppShell() {
   const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
   const [initialWorkspaceId] = useState<string | null>(() => searchParams.get("workspace"));
   const [initialMeetingId] = useState<string | null>(() => searchParams.get("meeting"));
-  const [activeCwd, setActiveCwd] = useState<string | null>(null);
+  const [activeCwd, setActiveCwd] = useState<string | null>(() => initialDefaultCwd);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !searchParams.get("session"));
@@ -184,10 +188,13 @@ export function AppShell() {
         if (data.preferences?.defaultWorkspaceCwd) {
           setPreferredCwd(data.preferences.defaultWorkspaceCwd);
           setActiveCwd(data.preferences.defaultWorkspaceCwd);
+        } else if (initialDefaultCwd) {
+          setPreferredCwd(initialDefaultCwd);
+          setActiveCwd(initialDefaultCwd);
         }
       })
       .catch(() => {});
-  }, [initialWorkspaceId]);
+  }, [initialDefaultCwd, initialWorkspaceId]);
 
   useEffect(() => {
     if (!initialWorkspaceId) return;
@@ -295,6 +302,27 @@ export function AppShell() {
     }
   }, [pathname, router]);
 
+  useEffect(() => {
+    if (!initialSessionId || initialSessionRestored) return;
+    if (selectedSessionRef.current?.id === initialSessionId) return;
+
+    let cancelled = false;
+    void fetchSessionInfo(initialSessionId)
+      .then((info) => {
+        if (cancelled || !info) return;
+        setActiveCwd(info.cwd);
+        setPreferredCwd(info.cwd);
+        setSessionRestoreNotice(null);
+        handleSelectSession(info, true);
+        setRefreshKey((k) => k + 1);
+      })
+      .catch(() => null);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [handleSelectSession, initialSessionId, initialSessionRestored]);
+
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
@@ -381,12 +409,15 @@ export function AppShell() {
   }, [pathname, router]);
 
   const handleInitialRestoreDone = useCallback((found: boolean) => {
+    if (!found && selectedSessionRef.current?.id === initialSessionId) {
+      return;
+    }
     setInitialSessionRestored(true);
     if (!found) {
       router.replace(workbenchPath(pathname), { scroll: false });
       setSessionRestoreNotice(i18nT("appShell.sessionNotFound"));
     }
-  }, [pathname, router, i18nT]);
+  }, [initialSessionId, pathname, router, i18nT]);
 
   const handleSessionDeleted = useCallback((sessionId: string) => {
     setRefreshKey((k) => k + 1);
@@ -514,7 +545,7 @@ export function AppShell() {
         onNewSession={handleNewSession}
         onOpenSettings={handleOpenSettingsView}
         isSettingsView={workbenchView === "settings"}
-        initialSessionId={initialSessionId}
+        initialSessionId={initialSessionRestored ? null : initialSessionId}
         onInitialRestoreDone={handleInitialRestoreDone}
         refreshKey={refreshKey}
         onSessionDeleted={handleSessionDeleted}
