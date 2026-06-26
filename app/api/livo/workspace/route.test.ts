@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,6 +60,11 @@ describe("POST /api/livo/workspace", () => {
     expect(json.cwd).not.toContain("/meetings/meeting_123");
     expect(json.meetingPath).toContain("/users/user-42/meetings/meeting_123");
     expect(existsSync(json.cwd)).toBe(true);
+    const agents = readFileSync(join(json.cwd, "AGENTS.md"), "utf8");
+    expect(agents).toContain("Livo Meeting Execution Rules");
+    expect(agents).toContain("summary.md");
+    expect(agents).toContain("不自动发送邮件");
+    expect(readdirSync(json.cwd)).not.toContain("agents.md");
     expect(existsSync(json.meetingPath)).toBe(true);
     expect(existsSync(join(json.meetingPath, "inputs"))).toBe(true);
     expect(readFileSync(join(json.meetingPath, "inputs", "meeting-brief.md"), "utf8")).toContain("会议摘要");
@@ -78,5 +83,17 @@ describe("POST /api/livo/workspace", () => {
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "Invalid userId" });
+  });
+
+  it("does not overwrite an existing AGENTS.md", async () => {
+    const { POST } = await import("./route");
+    const first = await POST(postWorkspace({ userId: "user-42", meetingId: "meeting_123" }));
+    const firstJson = await first.json();
+    writeFileSync(join(firstJson.cwd, "AGENTS.md"), "custom user rules");
+
+    const second = await POST(postWorkspace({ userId: "user-42", meetingId: "meeting_456" }));
+
+    expect(second.status).toBe(200);
+    expect(readFileSync(join(firstJson.cwd, "AGENTS.md"), "utf8")).toBe("custom user rules");
   });
 });

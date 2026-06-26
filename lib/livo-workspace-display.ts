@@ -1,6 +1,6 @@
 export function formatLivoWorkspacePath(cwd: string, homeDir?: string): string {
   const match = cwd.match(/^(.*\/workspaces\/livo\/users\/[^/]+)(?:\/(.*))?$/);
-  if (match) return match[2] ? `Livo 工作区 / ${match[2]}` : "Livo 工作区";
+  if (match) return "Livo 会议任务";
 
   const path = homeDir && cwd.startsWith(homeDir) ? "~" + cwd.slice(homeDir.length) : cwd;
   const sep = path.includes("/") ? "/" : "\\";
