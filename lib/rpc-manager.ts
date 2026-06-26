@@ -366,7 +366,7 @@ export async function startRpcSession(
     // For "all off" (toolNames === []), pass noTools: "all" to disable all.
     const noTools = toolNames?.length === 0 ? "all" as const : undefined;
 
-    const resourceLoader = await createAgentResourceLoader(cwd);
+    const resourceLoader = await createAgentResourceLoader(cwd, agentDir);
 
     const { session: inner } = await createAgentSession({
       cwd,

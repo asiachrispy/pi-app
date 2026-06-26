@@ -108,3 +108,16 @@ export function tenantContextFromLivoSession(session: StoredLivoSession): Tenant
     agentDir: tenantAgentDirFor(session.livoUserId),
   };
 }
+
+/**
+ * 由 Livo userId 直接构造租户上下文。
+ * 用于 server-to-server 路径（如 /api/agent/new），其租户身份来自请求体的
+ * livoUserId（而非 cookie），需显式建立上下文后再调 startRpcSession，
+ * 否则执行路径会回退全局 agentDir（方案二核心漏洞点）。
+ */
+export function tenantContextForUserId(livoUserId: string): TenantContext {
+  return {
+    tenantId: livoUserId,
+    agentDir: tenantAgentDirFor(livoUserId),
+  };
+}

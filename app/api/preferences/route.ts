@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { requireApiAuth } from "@/lib/api-auth";
+import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
 import {
   loadPiWebPreferences,
   mergePiWebPreferences,
@@ -45,6 +46,8 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
+  const livoRejected = rejectLivoGlobalConfigWrite(req);
+  if (livoRejected) return livoRejected;
 
   try {
     const body = await req.json();

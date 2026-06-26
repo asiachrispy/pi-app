@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { requireApiAuth } from "@/lib/api-auth";
+import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
 import { mergeSceneOverrides, readSceneOverrides } from "@/lib/scene-overrides";
 import { previewScenePackImport, validateScenePack } from "@/lib/scene-pack";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
+  const livoRejected = rejectLivoGlobalConfigWrite(req);
+  if (livoRejected) return livoRejected;
 
   const authRejected = requireApiAuth(req);
   if (authRejected) return authRejected;

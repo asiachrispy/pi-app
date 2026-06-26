@@ -26,29 +26,20 @@ describe("listProjectCwdsForPicker", () => {
     prefsMock.mockReturnValue({});
   });
 
-  it("merges prod session cwds when dev agent dir is isolated", async () => {
-    // 新签名：传 global agentDir（/prod/pi-agent）。global 分支下 getAgentDir(/dev)
-    // !== getDefaultAgentDir(/prod) 时，额外并入一次无参 listAll 的 prod sessions。
-    let call = 0;
-    listAllMock.mockImplementation(() => {
-      call += 1;
-      // 第二次调用（合并 prod）返回更全的列表
-      if (call >= 2) {
-        return [
-          { cwd: "/Users/mk/codespace/pi", modified: new Date("2026-06-01") },
-          { cwd: "/Users/mk/codespace/pi-web", modified: new Date("2026-06-02") },
-          { cwd: "/Users/mk/codespace/AmzLT", modified: new Date("2026-06-03") },
-        ];
-      }
-      return [{ cwd: "/Users/mk/codespace/pi", modified: new Date("2026-06-01") }];
-    });
+  it("lists only the given agentDir's sessions, without merging prod (dev merge removed)", async () => {
+    // 旧版在 dev 隔离时会额外并入 prod，依赖临时改 process.env 的 hack（已废弃）。
+    // 新行为：只列传入 agentDir 自己的 session，listAll 只调一次。
+    listAllMock.mockResolvedValue([
+      { cwd: "/Users/mk/codespace/pi", modified: new Date("2026-06-01") },
+      { cwd: "/Users/mk/codespace/pi-web", modified: new Date("2026-06-02") },
+    ]);
 
     const { listProjectCwdsForPicker } = await import("./session-reader");
     const cwds = await listProjectCwdsForPicker("/prod/pi-agent");
 
+    expect(cwds).toContain("/Users/mk/codespace/pi");
     expect(cwds).toContain("/Users/mk/codespace/pi-web");
-    expect(cwds).toContain("/Users/mk/codespace/AmzLT");
-    expect(listAllMock).toHaveBeenCalledTimes(2);
+    expect(listAllMock).toHaveBeenCalledTimes(1);
   });
 
   it("filters out cwds that sit inside the OS temp directory", async () => {

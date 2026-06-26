@@ -7,6 +7,7 @@ import { runNpx } from "@/lib/npx";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { getAgentDir, usesIsolatedAgentDataDir } from "@/lib/agent-dir";
 import { mirrorNamedGlobalSkills, parseInstalledSkillNames } from "@/lib/skill-mirror";
+import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ const ANSI_RE = /\x1B\[[0-9;]*m/g;
 export async function POST(req: Request) {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
+  const livoRejected = rejectLivoGlobalConfigWrite(req);
+  if (livoRejected) return livoRejected;
 
   try {
     const { package: pkg, scope, cwd } = await req.json() as { package?: string; scope?: string; cwd?: string };

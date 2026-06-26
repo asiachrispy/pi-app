@@ -8,6 +8,7 @@ import {
 } from "@/lib/livo/tenant-context";
 import { TenantGate, currentAgentDir, currentSessionDir, gate } from "@/lib/livo/tenant-gate";
 import { getDefaultAgentDir } from "@/lib/agent-dir";
+import { isTenantAgentDir } from "@/lib/session-reader";
 
 const CTX = { tenantId: "user-1", agentDir: "/data/pi-agent/workspaces/livo/users/user-1/.pi-agent" };
 
@@ -69,5 +70,27 @@ describe("TenantGate", () => {
 
   it("gate() 在无上下文时 throw（fail-closed）", () => {
     expect(() => gate()).toThrow();
+  });
+});
+
+describe("isTenantAgentDir (#3: dev 隔离目录不得误判为租户单层布局)", () => {
+  it("租户 agentDir（workspace 根下的 .pi-agent）判为租户", () => {
+    expect(
+      isTenantAgentDir("/data/pi-agent/workspaces/livo/users/user-1/.pi-agent"),
+    ).toBe(true);
+  });
+
+  it("dev 隔离目录（~/tmp/pi-dev-agent）不是租户", () => {
+    expect(isTenantAgentDir("/Users/mk/tmp/pi-dev-agent")).toBe(false);
+  });
+
+  it("全局默认目录不是租户", () => {
+    expect(isTenantAgentDir(getDefaultAgentDir())).toBe(false);
+  });
+
+  it("工作区根下但不以 .pi-agent 结尾的目录不是租户", () => {
+    expect(
+      isTenantAgentDir("/data/pi-agent/workspaces/livo/users/user-1/meetings"),
+    ).toBe(false);
   });
 });
