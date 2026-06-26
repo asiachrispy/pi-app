@@ -67,6 +67,7 @@ export interface AgentSessionLike {
   compact(customInstructions?: string): Promise<unknown>;
   setAutoCompactionEnabled(enabled: boolean): void;
   setAutoRetryEnabled(enabled: boolean): void;
+  appendSessionInfo?(name: string): void;
   steer(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
   followUp(text: string, images?: Array<{ type: "image"; data: string; mimeType: string }>): Promise<void>;
   getAllTools(): ToolInfo[];

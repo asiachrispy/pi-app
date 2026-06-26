@@ -39,7 +39,7 @@ describe("POST /api/agent/new", () => {
     rpc.startRpcSession.mockReset();
     rpc.startRpcSession.mockResolvedValue({
       realSessionId: "session-1",
-      session: { send: vi.fn(async () => null) },
+      session: { send: vi.fn(async () => null), inner: { appendSessionInfo: vi.fn() } },
     });
   });
 
@@ -80,5 +80,23 @@ describe("POST /api/agent/new", () => {
 
     expect(res.status).toBe(200);
     expect(rpc.startRpcSession).toHaveBeenCalledWith(expect.any(String), "", cwd, undefined);
+  });
+
+  it("sets submitted Livo session name before dispatching the prompt", async () => {
+    const { POST } = await import("./route");
+    const cwd = join(process.env.PI_WEB_LIVO_WORKSPACE_ROOT!, "users", "user-1");
+    mkdirSync(cwd, { recursive: true });
+
+    const res = await POST(postAgent({
+      cwd,
+      type: "prompt",
+      message: "hello",
+      livoUserId: "user-1",
+      sessionName: "fileId_1_跟进客户",
+    }));
+
+    const session = (await rpc.startRpcSession.mock.results[0].value).session;
+    expect(res.status).toBe(200);
+    expect(session.inner.appendSessionInfo).toHaveBeenCalledWith("fileId_1_跟进客户");
   });
 });

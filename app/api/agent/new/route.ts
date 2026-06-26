@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json() as { cwd?: string; [key: string]: unknown };
-    const { cwd, livoUserId, livoMeetingId, livoTodos, ...command } = body;
+    const { cwd, livoUserId, livoMeetingId, livoTodos, sessionName, ...command } = body;
 
     if (!cwd || typeof cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     // 本路径是 server-to-server（租户身份来自 body.livoUserId 而非 cookie），
     // 故用 livoOwner 显式建立上下文；非 Livo（loopback）则直接执行走全局。
     const runCore = () => createSessionAndDispatch({
-      cwd, command, livoUserId, livoMeetingId, livoTodos,
+      cwd, command, livoUserId, livoMeetingId, livoTodos, sessionName,
     });
     const payload = livoOwner
       ? await runWithTenant(tenantContextForUserId(livoOwner), runCore)
@@ -55,14 +55,18 @@ async function createSessionAndDispatch(args: {
   livoUserId: unknown;
   livoMeetingId: unknown;
   livoTodos: unknown;
+  sessionName: unknown;
 }): Promise<{ success: true; sessionId: string; data: unknown }> {
-  const { cwd, command, livoUserId, livoMeetingId, livoTodos } = args;
+  const { cwd, command, livoUserId, livoMeetingId, livoTodos, sessionName } = args;
 
   // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
   const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: string; [key: string]: unknown };
 
   const tempKey = `__new__${crypto.randomUUID()}`;
   const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, toolNames);
+  if (typeof sessionName === "string" && sessionName.trim()) {
+    session.inner.appendSessionInfo?.(sessionName.trim());
+  }
 
   // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
   // in sync so the new cwd is immediately readable via /api/files. Without this,
