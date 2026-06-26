@@ -16,6 +16,7 @@
 - **Livo 用户数据隔离**：`/api/sessions`、`/api/sessions/[id]` 与 `/api/default-cwd` 根据当前 Livo userId 过滤或生成 workspace；server-to-server `PI_WEB_REMOTE_TOKEN` 继续保留给 Livo 后端派发任务。
 
 ### Fixed
+- **Livo 会议搜索任务**（workspace AGENTS.md）：新增「联网搜索与调研」规范，要求用 pi-search-hub/bash 主动检索，禁止声称无联网或编造结果。
 - **Livo SSO 残留 cookie 入口**：`/app/` 与私有 API 不再只凭 `pi_livo_session` cookie 名称放行，改为校验签名/过期；工作台服务端渲染再确认 session store 中存在记录。过期、损坏或服务端记录已丢失的 cookie 会重新进入 Livo SSO，避免前端落到「需要远程认证」。
 - **子路径部署导航**：`/app/` 下的设置、首页、新建对话等内部导航保留当前 workbench pathname，避免跳到站点根路径 `https://pi.gottao.com/`。
 - **工作台入口回跳**：`/app?session=...` 规范化为 `/app/?session=...` 并保留 query；根路径 `https://pi.gottao.com/` 不再被 Pi Web 抢占，继续作为产品介绍页。

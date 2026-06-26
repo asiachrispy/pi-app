@@ -68,6 +68,8 @@ describe("POST /api/livo/workspace", () => {
     expect(agents).toContain("Livo Meeting Execution Rules");
     expect(agents).toContain("summary.md");
     expect(agents).toContain("不自动发送邮件");
+    expect(agents).toContain("pi-search-hub");
+    expect(agents).toContain("编造搜索结果");
     expect(readdirSync(json.cwd)).not.toContain("agents.md");
     expect(existsSync(json.meetingPath)).toBe(true);
     expect(existsSync(join(json.meetingPath, "inputs"))).toBe(true);
