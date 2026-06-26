@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { hasBearerPrefix, getSessionCookie } from "./lib/request-auth-common";
-import { authorizeMiddlewareRequest, hasValidLivoSessionCookie, isRemoteAccessEnabledEnv } from "./lib/middleware-auth";
-import { isLivoSsoEnabled } from "./lib/livo/config";
+import { authorizeMiddlewareRequest, hasValidLivoSessionWithStore, hasValidRemoteSessionWithStore, isRemoteAccessEnabledEnv } from "./lib/middleware-auth";
+import { isLivoSsoEnabled } from "./lib/livo/sso-flags";
 import {
   buildSsoStartUrl,
   isWorkbenchEntry,
   resolveWorkbenchBasePath,
   workbenchEntryPathname,
-  workbenchMiddlewareMatchers,
   WORKBENCH_ENTRY_HEADER,
 } from "./lib/livo/workbench";
 
@@ -29,6 +27,9 @@ function isPublicApiRequest(pathname: string, method: string): boolean {
   if (pathname === "/api/livo/sso/start" || pathname === "/api/livo/sso/callback") {
     return method === "GET" || method === "HEAD" || method === "OPTIONS";
   }
+  if (pathname === "/api/internal/session/exists") {
+    return method === "GET" || method === "HEAD" || method === "OPTIONS";
+  }
   return false;
 }
 
@@ -43,7 +44,7 @@ function forbidden(reason: string): NextResponse {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (isLivoSsoEnabled() && isWorkbenchEntry(pathname, request.headers)) {
-    if (!await hasValidLivoSessionCookie(request)) {
+    if (!await hasValidLivoSessionWithStore(request)) {
       const start = new URL("/api/livo/sso/start", request.url);
       const useWorkbenchPath = pathname === workbenchEntryPathname()
         || pathname === resolveWorkbenchBasePath()
@@ -63,14 +64,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Bearer tokens and session cookies are verified in route handlers (disk-backed auth).
-  if (hasBearerPrefix(request)) {
+  // Remote / Livo cookies require HMAC + store when PI_INTERNAL_VERIFY_TOKEN is set (#11b / #11c).
+  if (await hasValidRemoteSessionWithStore(request)) {
     return NextResponse.next();
   }
-  if (getSessionCookie(request)) {
-    return NextResponse.next();
-  }
-  if (await hasValidLivoSessionCookie(request)) {
+  if (await hasValidLivoSessionWithStore(request)) {
     return NextResponse.next();
   }
 
@@ -90,5 +88,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", ...workbenchMiddlewareMatchers(), "/api/:path*"],
+  // Next.js 要求 matcher 为编译期字面量；prod 默认工作台 /app（见 workbench.ts）
+  matcher: ["/", "/app", "/app/", "/api/:path*"],
 };

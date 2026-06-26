@@ -1,7 +1,8 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { getAgentDir } from "@/lib/agent-dir";
+import { realpathSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import type { LivoStoredSessionRecord } from "@/lib/auth/session-store";
+import { getLivoSessionStore } from "@/lib/auth/session-store";
 import { isLivoSsoEnabled, resolveLivoWorkspaceRoot } from "@/lib/livo/config";
 import { resolveWorkbenchBasePath, workbenchReturnTo } from "@/lib/livo/workbench";
 import { pathBelongsToRoot } from "@/lib/livo/path-utils";
@@ -29,13 +30,10 @@ export interface LivoOwnedResource {
   cwd?: string | null;
 }
 
-type StoredLivoSessionRecord = Omit<StoredLivoSession, "storeKey"> & {
-  storeKey?: string;
-  sidHash?: string;
-};
+type StoredLivoSessionRecord = LivoStoredSessionRecord;
 
-function sessionStorePath(): string {
-  return join(getAgentDir(), "auth", "livo-sessions.json");
+function sessionStore() {
+  return getLivoSessionStore();
 }
 
 function secret(): string {
@@ -53,20 +51,6 @@ function legacyStoreKey(sessionId: string, sessionSecret: string): string {
   return createHmac("sha256", sessionSecret).update(sessionId).digest("base64url");
 }
 
-function readStore(): Record<string, StoredLivoSessionRecord> {
-  try {
-    return JSON.parse(readFileSync(sessionStorePath(), "utf8")) as Record<string, StoredLivoSessionRecord>;
-  } catch {
-    return {};
-  }
-}
-
-function writeStore(store: Record<string, StoredLivoSessionRecord>): void {
-  const file = sessionStorePath();
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify(store, null, 2));
-}
-
 function normalizeStoredSession(storeKey: string, stored: StoredLivoSessionRecord): StoredLivoSession {
   return {
     livoUserId: stored.livoUserId,
@@ -76,6 +60,19 @@ function normalizeStoredSession(storeKey: string, stored: StoredLivoSessionRecor
     createdAt: stored.createdAt,
     expiresAt: stored.expiresAt,
   };
+}
+
+export function createLivoSession(user: LivoSessionUser): { cookieValue: string; expiresAt: Date } {
+  const sid = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const sessionSecret = secret();
+  sessionStore().set(sid, {
+    ...user,
+    storeKey: sid,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiresAt.toISOString(),
+  });
+  return { cookieValue: issueSessionCookieValue(sid, expiresAt.getTime(), sessionSecret), expiresAt };
 }
 
 export function normalizePiReturnTo(value: string | null | undefined): string {
@@ -94,25 +91,28 @@ export function normalizePiReturnTo(value: string | null | undefined): string {
   return url.toString();
 }
 
-export function createLivoSession(user: LivoSessionUser): { cookieValue: string; expiresAt: Date } {
-  const sid = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  const sessionSecret = secret();
-  const store = readStore();
-  store[sid] = {
-    ...user,
-    storeKey: sid,
-    createdAt: new Date().toISOString(),
-    expiresAt: expiresAt.toISOString(),
-  };
-  writeStore(store);
-  return { cookieValue: issueSessionCookieValue(sid, expiresAt.getTime(), sessionSecret), expiresAt };
-}
-
 export function readLivoSession(req: Request): StoredLivoSession | null {
   if (!isLivoSsoEnabled()) return null;
   const value = getNamedCookie(req, LIVO_SESSION_COOKIE_NAME);
   return readLivoSessionCookieValue(value);
+}
+
+function lookupStoredSession(sessionId: string, sessionSecret: string): StoredLivoSession | null {
+  const store = sessionStore();
+  let resolvedStoreKey = sessionId;
+  let stored = store.get(resolvedStoreKey);
+  if (!stored) {
+    resolvedStoreKey = legacyStoreKey(sessionId, sessionSecret);
+    stored = store.get(resolvedStoreKey);
+  }
+  if (!stored || Date.parse(stored.expiresAt) <= Date.now()) return null;
+  return normalizeStoredSession(resolvedStoreKey, stored);
+}
+
+export function livoSessionExistsBySessionId(sessionId: string): boolean {
+  const sessionSecret = readSecret();
+  if (!sessionSecret) return false;
+  return lookupStoredSession(sessionId, sessionSecret) !== null;
 }
 
 export function readLivoSessionCookieValue(value: string | null | undefined): StoredLivoSession | null {
@@ -121,24 +121,13 @@ export function readLivoSessionCookieValue(value: string | null | undefined): St
   if (!sessionSecret) return null;
   const parsed = parseSessionCookieValue(value, sessionSecret);
   if (!parsed) return null;
-  const store = readStore();
-  const storeKey = parsed.sessionId;
-  let stored = store[storeKey];
-  let resolvedStoreKey = storeKey;
-  if (!stored) {
-    resolvedStoreKey = legacyStoreKey(parsed.sessionId, sessionSecret);
-    stored = store[resolvedStoreKey];
-  }
-  if (!stored || Date.parse(stored.expiresAt) <= Date.now()) return null;
-  return normalizeStoredSession(resolvedStoreKey, stored);
+  return lookupStoredSession(parsed.sessionId, sessionSecret);
 }
 
 export function deleteLivoSession(req: Request): void {
   const session = readLivoSession(req);
   if (!session) return;
-  const store = readStore();
-  delete store[session.storeKey];
-  writeStore(store);
+  sessionStore().delete(session.storeKey);
 }
 
 export function livoUserWorkspaceRoot(livoUserId: string): string {

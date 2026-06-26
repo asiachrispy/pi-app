@@ -66,6 +66,7 @@ export const GLOBAL_AUTH_ROUTES: readonly string[] = [
   "files/stage",
   "git-branch",
   "home",
+  "internal/session/exists",
   "livo/logout",
   "livo/me",
   "livo/summary",

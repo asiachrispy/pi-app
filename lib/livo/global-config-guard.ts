@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { readLivoSession } from "@/lib/livo-sso";
+import { appendRequestAuditEvent } from "@/lib/audit-request";
+import { resolveLivoPrincipal } from "@/lib/remote-auth";
 
 /**
  * 全局模型配置写保护（方案二 Step 6，收窄版）。
@@ -12,7 +13,14 @@ import { readLivoSession } from "@/lib/livo-sso";
  *   if (rejected) return rejected;
  */
 export function rejectLivoGlobalModelConfigWrite(req: Request): NextResponse | null {
-  if (readLivoSession(req)) {
+  const principal = resolveLivoPrincipal(req);
+  if (principal) {
+    appendRequestAuditEvent(req, {
+      type: "global_config_denied",
+      tenantId: principal.tenantId,
+      principalKind: "livo",
+      reason: "Global model configuration is read-only for Livo tenants",
+    });
     return NextResponse.json(
       { error: "Global model configuration is read-only for Livo tenants" },
       { status: 403 },

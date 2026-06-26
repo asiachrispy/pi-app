@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- **Livo M4 预算 + usage 回调**（#12c / M4）：`lib/livo/check-budget.ts`、`lib/livo/usage-callback.ts`；global-config-guard 用 `resolveLivoPrincipal`。
+- **Livo M3 token usage ledger**（#12b）：`lib/livo/record-usage.ts` + `token-usage.jsonl`；`buildTenantTokenUsage` 与 ledger 去重合并。
+- **Livo M2 internal verify + SSO 单层**（#10 / #11b）：`/api/internal/session/exists`、`hasValidLivoSessionWithStore`、`PI_INTERNAL_VERIFY_TOKEN`。
+- **Livo M1 Redis SessionStore**（#9b–#9c）：`lib/auth/redis-livo-session-store.ts` + `PI_SESSION_STORE_*` 环境变量；双写 JSON/Redis，读切 Redis，instrumentation 启动 warm。
+- **Livo M0 SessionStore + middleware + 审计**（#9a / #11a / #12a）：`lib/auth/session-store.ts`（`FileLivoSessionStore`）；middleware 移除 Bearer 前缀盲放行、Edge 校验 `PI_WEB_REMOTE_TOKEN`；审计事件扩展 `tenantId`/`principalKind`，并挂到 Livo logout、SSO callback、global-config 403。
 - **Livo SSO 工作台登录**：新增 `/api/livo/sso/start`、`/api/livo/sso/callback`、`/api/livo/me`、`/api/livo/logout` 与 `pi_livo_session` HttpOnly cookie；用户访问 `pi.gottao.com/app/` 未登录时跳 Livo，校验一次性 ticket 后回到 `/app/` 或 `/app/?session=...`。
 - **Livo workspace 初始化 API**：新增 `/api/livo/workspace`，仅允许 server token 创建 `PI_WEB_LIVO_WORKSPACE_ROOT` 下的用户级工作区，并把会议资料写入 `meetings/{meetingId}/inputs/`。
 - **Livo workspace 直达解析 API**：新增 `/api/livo/workspace/resolve`，把 `/app/?workspace=livo:{userId}&meeting={meetingId}` 解析为当前 Livo SSO 用户的工作区 cwd，并拒绝跨用户 workspace。

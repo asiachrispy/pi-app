@@ -7,6 +7,7 @@ import { cacheSessionPath } from "./session-reader";
 import { createGlobalModelConfig, lookupModel } from "./resolve-model";
 import { collectSlashCommands, type SlashCommandListSource } from "./slash-commands";
 import type { AgentSessionLike, ToolInfo } from "./pi-types";
+import type { AssistantMessage } from "./types";
 
 // ============================================================================
 // Types
@@ -49,6 +50,14 @@ export class AgentSessionWrapper {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
       for (const l of this.listeners) l(event);
+      if (event.type === "message_end") {
+        const message = event.message as AssistantMessage | undefined;
+        if (message?.role === "assistant" && message.usage) {
+          void import("./livo/record-usage").then(({ recordUsageFromAssistantMessage }) => {
+            recordUsageFromAssistantMessage(this.sessionId, message);
+          });
+        }
+      }
       if (event.type === "agent_end") {
         void import("./notify-agent-end-server").then(({ notifyAgentEnd }) =>
           notifyAgentEnd({ sessionId: this.sessionId }).catch(() => {}),
@@ -82,6 +91,9 @@ export class AgentSessionWrapper {
 
     switch (type) {
       case "prompt": {
+        void import("./livo/check-budget").then(({ warnIfBudgetExceeded }) =>
+          warnIfBudgetExceeded(currentAgentDir(), { sessionId: this.sessionId }),
+        );
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         this.inner.prompt(command.message as string, promptImages?.length ? { images: promptImages } : undefined).catch(() => {});

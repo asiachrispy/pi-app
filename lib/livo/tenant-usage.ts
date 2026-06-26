@@ -1,17 +1,23 @@
-import { getSessionEntries, listAllSessions } from "@/lib/session-reader";
-import type { SessionInfo, SessionMessageEntry } from "@/lib/types";
+import type { SessionMessageEntry } from "@/lib/types";
+import { getSessionEntries } from "@/lib/session-reader";
+import {
+  aggregateUsageLedger,
+  mergeTenantTokenUsage,
+  readUsageLedgerEvents,
+  usageMessageKey,
+  type UsageLedgerEvent,
+} from "@/lib/livo/record-usage";
+import { listAllSessions } from "@/lib/session-reader";
+import type { SessionInfo } from "@/lib/types";
 
 /**
- * Per-tenant token / cost 聚合（方案二 Step 5）。
+ * Per-tenant token / cost 聚合（方案二 Step 5 + M3 增量 jsonl）。
  *
- * 数据来源：每条 assistant 消息自带 usage（input/output/cache token + cost）。
- * 遍历该租户 agentDir 下所有 session 的 assistant 消息累加。
+ * 数据来源：
+ * 1. **增量**：`token-usage.jsonl`（recordUsage / message_end 写入）
+ * 2. **历史**：session 文件内 assistant usage（ledger 已覆盖的消息按 key 去重跳过）
  *
- * 隔离：调用方传入的 agentDir 决定遍历范围——租户 agentDir 经 listAllSessions
- * 只列该租户单层 sessions，天然不串其他租户。
- *
- * 本期只展示、不拦截（无预算 enforcement）。遍历全部 session 全文较重，但 usage
- * 接口非高频，可接受；将来对外开放时换 DB 增量记账（路线 3 接缝 recordUsage）。
+ * 隔离：agentDir 决定范围；ledger 与 session 均在租户 agentDir 下。
  */
 export interface TenantTokenUsage {
   inputTokens: number;
@@ -37,13 +43,22 @@ function emptyUsage(): TenantTokenUsage {
   };
 }
 
-/** 累加单个 session 文件里所有 assistant 消息的 usage。 */
-function accumulateSession(filePath: string, acc: TenantTokenUsage): void {
+function ledgerDedupeKeys(events: UsageLedgerEvent[]): Set<string> {
+  return new Set(events.map((event) => usageMessageKey(event.sessionId, event.messageTimestamp)));
+}
+
+/** 累加 session 文件 usage；跳过 ledger 已记账的消息。 */
+function accumulateSession(
+  sessionId: string,
+  filePath: string,
+  acc: TenantTokenUsage,
+  skipKeys: Set<string>,
+): void {
   let entries: ReturnType<typeof getSessionEntries>;
   try {
     entries = getSessionEntries(filePath);
   } catch {
-    return; // 单个 session 读失败不影响整体
+    return;
   }
   for (const entry of entries) {
     if (entry.type !== "message") continue;
@@ -51,6 +66,8 @@ function accumulateSession(filePath: string, acc: TenantTokenUsage): void {
     if (!message || message.role !== "assistant") continue;
     const usage = message.usage;
     if (!usage) continue;
+    const key = usageMessageKey(sessionId, message.timestamp);
+    if (skipKeys.has(key)) continue;
     acc.inputTokens += usage.input ?? 0;
     acc.outputTokens += usage.output ?? 0;
     acc.cacheReadTokens += usage.cacheRead ?? 0;
@@ -70,10 +87,18 @@ export async function buildTenantTokenUsage(
   sessions?: SessionInfo[],
 ): Promise<TenantTokenUsage> {
   const list = sessions ?? (await listAllSessions(agentDir));
-  const acc = emptyUsage();
-  acc.sessionCount = list.length;
-  for (const s of list) {
-    if (s.path) accumulateSession(s.path, acc);
+  const ledgerEvents = readUsageLedgerEvents(agentDir);
+  const skipKeys = ledgerDedupeKeys(ledgerEvents);
+
+  const scanned = emptyUsage();
+  scanned.sessionCount = list.length;
+  for (const session of list) {
+    if (session.path) accumulateSession(session.id, session.path, scanned, skipKeys);
   }
-  return acc;
+
+  if (ledgerEvents.length === 0) {
+    return scanned;
+  }
+
+  return mergeTenantTokenUsage(scanned, aggregateUsageLedger(ledgerEvents));
 }

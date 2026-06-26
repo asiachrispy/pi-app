@@ -1,3 +1,6 @@
 export async function register() {
-  // Remote auth config is initialized lazily from API routes.
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { initLivoSessionStore } = await import("./lib/auth/session-store");
+    await initLivoSessionStore();
+  }
 }

@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetLivoSessionStoreForTests } from "@/lib/auth/session-store";
 
 const agentDir = vi.hoisted(() => ({ value: "" }));
 
@@ -13,6 +14,7 @@ vi.mock("@/lib/agent-dir", () => ({
 describe("livo sso", () => {
   beforeEach(() => {
     agentDir.value = mkdtempSync(join(tmpdir(), "pi-livo-sso-"));
+    resetLivoSessionStoreForTests();
     vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
     vi.stubEnv("PI_LIVO_SESSION_SECRET", "test-secret-32-byte-minimum-value");
     vi.stubEnv("PI_LIVO_BASE_URL", "https://livo.gottao.com/livoApi/livoAgent");
@@ -20,6 +22,7 @@ describe("livo sso", () => {
 
   afterEach(() => {
     rmSync(agentDir.value, { recursive: true, force: true });
+    resetLivoSessionStoreForTests();
     vi.unstubAllEnvs();
     vi.resetModules();
   });
@@ -34,12 +37,14 @@ describe("livo sso", () => {
   });
 
   it("creates and reads an opaque livo session cookie", async () => {
-    const { createLivoSession, readLivoSession } = await import("./livo-sso");
+    const { createLivoSession, livoSessionExistsBySessionId, readLivoSession } = await import("./livo-sso");
     const session = createLivoSession({
       livoUserId: "user-1",
       email: "user@example.com",
       name: "Chris",
     });
+    const sessionId = session.cookieValue.split(".")[0]!;
+    expect(livoSessionExistsBySessionId(sessionId)).toBe(true);
     const req = new Request("https://pi.gottao.com/api/livo/me", {
       headers: { cookie: `pi_livo_session=${encodeURIComponent(session.cookieValue)}` },
     });

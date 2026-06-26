@@ -9,6 +9,7 @@ import {
 } from "@/lib/livo-sso";
 import { isLivoSsoEnabled } from "@/lib/livo/config";
 import { buildSsoStartUrl } from "@/lib/livo/workbench";
+import { isLivoSessionStoreVerifyEnabled } from "@/lib/middleware-internal-verify";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +31,12 @@ export default async function Home({
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(LIVO_SESSION_COOKIE_NAME);
     const livoSession = readLivoSessionCookieValue(sessionCookie?.value);
-    if (!livoSession) {
+    if (livoSession) {
+      initialDefaultCwd = livoUserWorkspaceRoot(livoSession.livoUserId);
+    } else if (!isLivoSessionStoreVerifyEnabled()) {
+      // Edge 未接 internal verify 时，Node 仍做 store 校验（#10 前兼容）
       redirect(buildSsoStartUrl(search));
     }
-    initialDefaultCwd = livoUserWorkspaceRoot(livoSession.livoUserId);
   }
 
   return (

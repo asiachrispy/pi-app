@@ -4,9 +4,14 @@ import { middleware } from "./middleware";
 import { issueSessionCookieValue } from "./lib/signed-session-cookie";
 
 const LIVO_SECRET = "test-secret-32-byte-minimum-value";
+const REMOTE_SECRET = "remote-signing-secret-32-bytes-min";
 
 function livoCookie(): string {
   return `pi_livo_session=${issueSessionCookieValue("sid", Date.now() + 60_000, LIVO_SECRET)}`;
+}
+
+function remoteCookie(sessionId = "remote-sid"): string {
+  return `pi_web_session=${issueSessionCookieValue(sessionId, Date.now() + 60_000, REMOTE_SECRET)}`;
 }
 
 function apiRequest(pathname: string, method = "GET"): NextRequest {
@@ -114,5 +119,162 @@ describe("middleware public API matrix", () => {
 
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe("https://pi.gottao.com/api/livo/sso/start?returnTo=%2Fapp%2F%3Fsession%3Ds1");
+  });
+});
+
+describe("middleware bearer validation (#11a)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("rejects bearer prefix without valid token when remote is enabled", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "1");
+    vi.stubEnv("PI_WEB_REMOTE_TOKEN", "secret-token");
+
+    const res = await middleware(new NextRequest("http://192.168.1.5:30141/api/sessions", {
+      method: "GET",
+      headers: {
+        host: "192.168.1.5:30141",
+        authorization: "Bearer wrong-token",
+      },
+    }));
+
+    expect(res.status).toBe(401);
+  });
+
+  it("allows valid bearer token when remote is enabled", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "1");
+    vi.stubEnv("PI_WEB_REMOTE_TOKEN", "secret-token");
+
+    const res = await middleware(new NextRequest("http://192.168.1.5:30141/api/sessions", {
+      method: "GET",
+      headers: {
+        host: "192.168.1.5:30141",
+        authorization: "Bearer secret-token",
+      },
+    }));
+
+    expect(res.status).toBe(200);
+  });
+
+  it("forbids bearer when remote is disabled on non-loopback hosts", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "");
+    vi.stubEnv("PI_WEB_REMOTE_TOKEN", "secret-token");
+
+    const res = await middleware(new NextRequest("http://192.168.1.5:30141/api/sessions", {
+      method: "GET",
+      headers: {
+        host: "192.168.1.5:30141",
+        authorization: "Bearer secret-token",
+      },
+    }));
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("middleware livo store verify (#11b)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("blocks signed livo cookie when store record is missing and internal verify is enabled", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "1");
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", LIVO_SECRET);
+    vi.stubEnv("PI_INTERNAL_VERIFY_TOKEN", "internal-token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ exists: false }), { status: 200 }),
+    );
+
+    const res = await middleware(new NextRequest("http://192.168.1.5:30141/api/sessions", {
+      method: "GET",
+      headers: {
+        host: "192.168.1.5:30141",
+        cookie: livoCookie(),
+      },
+    }));
+
+    expect(res.status).toBe(401);
+  });
+
+  it("redirects workbench entry when signed cookie has no store record", async () => {
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", LIVO_SECRET);
+    vi.stubEnv("PI_INTERNAL_VERIFY_TOKEN", "internal-token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ exists: false }), { status: 200 }),
+    );
+
+    const res = await middleware(pageRequest("/app/?session=s1", livoCookie()));
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/api/livo/sso/start");
+  });
+
+  it("allows private API when internal verify reports store exists", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "1");
+    vi.stubEnv("PI_LIVO_SSO_ENABLED", "1");
+    vi.stubEnv("PI_LIVO_SESSION_SECRET", LIVO_SECRET);
+    vi.stubEnv("PI_INTERNAL_VERIFY_TOKEN", "internal-token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ exists: true }), { status: 200 }),
+    );
+
+    const res = await middleware(new NextRequest("http://192.168.1.5:30141/api/sessions", {
+      method: "GET",
+      headers: {
+        host: "192.168.1.5:30141",
+        cookie: livoCookie(),
+      },
+    }));
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("middleware remote store verify (#11c)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("blocks signed remote cookie when store record is missing and internal verify is enabled", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "1");
+    vi.stubEnv("PI_WEB_REMOTE_SIGNING_SECRET", REMOTE_SECRET);
+    vi.stubEnv("PI_INTERNAL_VERIFY_TOKEN", "internal-token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ exists: false, kind: "remote" }), { status: 200 }),
+    );
+
+    const res = await middleware(new NextRequest("http://192.168.1.5:30141/api/sessions", {
+      method: "GET",
+      headers: {
+        host: "192.168.1.5:30141",
+        cookie: remoteCookie(),
+      },
+    }));
+
+    expect(res.status).toBe(401);
+  });
+
+  it("allows private API when remote store exists", async () => {
+    vi.stubEnv("PI_WEB_REMOTE", "1");
+    vi.stubEnv("PI_WEB_REMOTE_SIGNING_SECRET", REMOTE_SECRET);
+    vi.stubEnv("PI_INTERNAL_VERIFY_TOKEN", "internal-token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ exists: true, kind: "remote" }), { status: 200 }),
+    );
+
+    const res = await middleware(new NextRequest("http://192.168.1.5:30141/api/sessions", {
+      method: "GET",
+      headers: {
+        host: "192.168.1.5:30141",
+        cookie: remoteCookie("remote-ok"),
+      },
+    }));
+
+    expect(res.status).toBe(200);
   });
 });

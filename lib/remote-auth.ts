@@ -81,6 +81,12 @@ function sessionExists(config: RemoteAuthConfig, sessionId: string): boolean {
   return config.sessions.some((session) => session.id === sessionId);
 }
 
+export function remoteSessionExistsBySessionId(sessionId: string): boolean {
+  const config = loadRemoteAuthConfig();
+  if (!config) return false;
+  return sessionExists(config, sessionId);
+}
+
 function touchSession(config: RemoteAuthConfig, sessionId: string, userAgent: string): RemoteAuthConfig {
   const now = new Date().toISOString();
   return {

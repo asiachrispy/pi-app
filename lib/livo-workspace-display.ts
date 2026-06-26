@@ -1,7 +1,7 @@
-import { resolveLivoWorkspaceRoot } from "@/lib/livo/config";
+import { resolveLivoWorkspaceRootDisplay } from "@/lib/livo/workspace-root";
 
 export function formatLivoWorkspacePath(cwd: string, homeDir?: string): string {
-  const livoUsersPrefix = `${resolveLivoWorkspaceRoot()}/users/`;
+  const livoUsersPrefix = `${resolveLivoWorkspaceRootDisplay()}/users/`;
   if (cwd.startsWith(livoUsersPrefix)) return "Livo 会议任务";
 
   const path = homeDir && cwd.startsWith(homeDir) ? "~" + cwd.slice(homeDir.length) : cwd;

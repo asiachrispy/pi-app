@@ -7,6 +7,9 @@ export const REMOTE_AUDIT_FILENAME = "pi-web-remote-audit.jsonl";
 export type RemoteAuditEventType =
   | "auth_failure"
   | "auth_success"
+  | "global_config_denied"
+  | "livo_logout"
+  | "livo_sso_success"
   | "pairing_created"
   | "pairing_redeemed"
   | "remote_enabled"
@@ -18,6 +21,13 @@ export type RemoteAuditEventType =
   | "sessions_revoked_all"
   | "relay_offer_created";
 
+export type AuditPrincipalKind =
+  | "loopback"
+  | "open"
+  | "bearer"
+  | "remote"
+  | "livo";
+
 export interface RemoteAuditEvent {
   ts: string;
   type: RemoteAuditEventType;
@@ -28,6 +38,8 @@ export interface RemoteAuditEvent {
   userAgent?: string;
   reason?: string;
   detail?: string;
+  tenantId?: string;
+  principalKind?: AuditPrincipalKind;
 }
 
 function auditPath(): string {

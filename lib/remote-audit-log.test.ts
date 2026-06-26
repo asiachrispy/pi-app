@@ -36,4 +36,18 @@ describe("remote-audit-log", () => {
   it("returns empty list when file is missing", () => {
     expect(readRemoteAuditEvents()).toEqual([]);
   });
+
+  it("stores tenantId and principalKind when provided", () => {
+    appendRemoteAuditEvent({
+      type: "livo_sso_success",
+      tenantId: "user-99",
+      principalKind: "livo",
+      path: "/api/livo/sso/callback",
+    });
+
+    const [event] = readRemoteAuditEvents(1);
+    expect(event?.tenantId).toBe("user-99");
+    expect(event?.principalKind).toBe("livo");
+    expect(event?.type).toBe("livo_sso_success");
+  });
 });

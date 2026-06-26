@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { appendRemoteAuditEvent, getClientIp } from "@/lib/remote-audit-log";
 import {
   createLivoSession,
   LIVO_SESSION_COOKIE_NAME,
@@ -54,6 +55,14 @@ export async function GET(req: Request) {
     livoUserId: body.data.userId,
     email: body.data.email,
     name: body.data.name,
+  });
+  appendRemoteAuditEvent({
+    type: "livo_sso_success",
+    tenantId: body.data.userId,
+    principalKind: "livo",
+    ip: getClientIp(req),
+    path: "/api/livo/sso/callback",
+    method: "GET",
   });
   const response = NextResponse.redirect(returnTo);
   response.cookies.set(LIVO_SESSION_COOKIE_NAME, session.cookieValue, {
