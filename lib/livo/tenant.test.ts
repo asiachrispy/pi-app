@@ -6,7 +6,7 @@ import {
   tenantAgentDirFor,
   TENANT_AGENT_DIR_NAME,
 } from "@/lib/livo/tenant-context";
-import { TenantGate, currentAgentDir, currentSessionDir, gate } from "@/lib/livo/tenant-gate";
+import { currentAgentDir, currentSessionDir } from "@/lib/livo/tenant-gate";
 import { getDefaultAgentDir } from "@/lib/agent-dir";
 import { isTenantAgentDir } from "@/lib/session-reader";
 
@@ -35,7 +35,7 @@ describe("tenant-context (方案二: ALS 仅运输 + fail-closed)", () => {
   });
 });
 
-describe("currentAgentDir / currentSessionDir (租户取 gate, 非租户回退全局)", () => {
+describe("currentAgentDir / currentSessionDir (租户取上下文, 非租户回退全局)", () => {
   it("非租户路径回退全局 agentDir，sessionDir 为 undefined（走 pi 默认）", () => {
     expect(currentAgentDir()).toBe(getDefaultAgentDir());
     expect(currentSessionDir()).toBeUndefined();
@@ -46,30 +46,6 @@ describe("currentAgentDir / currentSessionDir (租户取 gate, 非租户回退�
       expect(currentAgentDir()).toBe(CTX.agentDir);
       expect(currentSessionDir()).toBe(`${CTX.agentDir}/sessions`);
     });
-  });
-});
-
-describe("TenantGate", () => {
-  it("sessionDir 是 agentDir 下的单层 sessions", () => {
-    const g = new TenantGate(CTX);
-    expect(g.sessionDir()).toBe(`${CTX.agentDir}/sessions`);
-    expect(g.tenantId).toBe("user-1");
-  });
-
-  it("ownsCwd 接受本租户工作区内路径、拒绝他人路径", () => {
-    const g = new TenantGate(CTX);
-    expect(g.ownsCwd("/data/pi-agent/workspaces/livo/users/user-1/meetings/m1")).toBe(true);
-    expect(g.ownsCwd("/data/pi-agent/workspaces/livo/users/user-2/meetings/m1")).toBe(false);
-    expect(g.ownsCwd(null)).toBe(false);
-  });
-
-  it("assertOwnsCwd 对跨租户路径 throw", () => {
-    const g = new TenantGate(CTX);
-    expect(() => g.assertOwnsCwd("/data/pi-agent/workspaces/livo/users/user-2/x")).toThrow();
-  });
-
-  it("gate() 在无上下文时 throw（fail-closed）", () => {
-    expect(() => gate()).toThrow();
   });
 });
 

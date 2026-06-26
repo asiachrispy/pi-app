@@ -14,7 +14,7 @@ type RouteHandler<C = unknown, R extends Request = Request> = (
  *
  * 行为：
  * - 请求带有效 Livo session → 构造 TenantContext，在 runWithTenant 作用域内执行 handler。
- *   handler 内部经 gate() 取 agentDir/sessionDir 显式下传。
+ *   handler 内部经 currentAgentDir()/currentSessionDir() 取目录显式下传。
  * - 请求无 Livo session（CLI / loopback / Bearer 等非租户路径）→ 直接透传，
  *   下游走全局 getAgentDir()，行为不变。
  * - TenantOwnershipError（跨租户归属校验失败）→ 统一转 403。

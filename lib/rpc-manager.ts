@@ -291,9 +291,9 @@ export class AgentSessionWrapper {
 // ============================================================================
 
 // 多租户说明（Step 3）：registry/locks 的键是 pi 的真实 sessionId（uuid，全局唯一）
-// 或 tempKey（含时间戳），不存在"相同 sessionId 跨租户碰撞"的穿透风险，故不加租户前缀。
-// 跨租户拿到他人 session 对象的风险由 route 层的 cwd 归属校验
-// （rejectLivoCwdOutsideWorkspace / assertOwnsCwd）兜底。
+// 或 tempKey（__new__ + randomUUID），不存在"相同 sessionId 跨租户碰撞"的穿透风险，
+// 故不加租户前缀。跨租户拿到他人 session 对象的风险由 route 层的 cwd 归属校验
+// （rejectLivoCwdOutsideWorkspace / realCwdBelongsToLivoUser）兜底。
 // 真正有穿透风险的是 session-reader 的 path/ref-files 缓存（键为 sessionId 且在归属校验前
 // 返回路径），那两处已按 agentDir 前缀隔离。
 declare global {
