@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   runWithTenant,
   getTenantContext,
@@ -50,6 +50,14 @@ describe("currentAgentDir / currentSessionDir (租户取上下文, 非租户回�
 });
 
 describe("isTenantAgentDir (#3: dev 隔离目录不得误判为租户单层布局)", () => {
+  beforeEach(() => {
+    vi.stubEnv("PI_WEB_LIVO_WORKSPACE_ROOT", "/data/pi-agent/workspaces/livo");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("租户 agentDir（workspace 根下的 .pi-agent）判为租户", () => {
     expect(
       isTenantAgentDir("/data/pi-agent/workspaces/livo/users/user-1/.pi-agent"),

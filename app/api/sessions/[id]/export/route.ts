@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { rejectLivoCwdOutsideWorkspace } from "@/lib/livo-session-guard";
 import { currentAgentDir } from "@/lib/livo/tenant-gate";
 import { withTenant } from "@/lib/livo/with-tenant";
@@ -51,8 +51,8 @@ export const GET = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   const { id } = await params;
 

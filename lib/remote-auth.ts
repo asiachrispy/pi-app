@@ -1,11 +1,20 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import type { AuthPrincipal } from "@/lib/auth/principal";
+import { livoPrincipalFromSession, principalReadOnly } from "@/lib/auth/principal";
 import { resolveLanOrigin } from "./lan-origin";
 import { buildConnectionOffer, buildOfferUrl } from "./pi-relay/connection-offer";
 import { generateRelayKeyPair } from "./pi-relay/crypto";
 import { DEFAULT_RELAY_ENDPOINT } from "./pi-relay/types";
 import { appendRemoteAuditEvent, getClientIp } from "./remote-audit-log";
 import { readLivoSession } from "./livo-sso";
+import {
+  getBearerToken,
+  getSessionCookie,
+  isLoopbackRequest,
+  isSameOriginLoopbackRequest,
+  timingSafeEqualString,
+} from "./request-auth-common";
 import {
   PAIRING_CODE_TTL_MS,
   SESSION_COOKIE_NAME,
@@ -54,64 +63,18 @@ export function verifySecret(value: string, stored: string): boolean {
   return timingSafeEqual(actual, expected);
 }
 
-export function getSessionCookie(req: Request): string | null {
-  const header = req.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const trimmed = part.trim();
-    if (trimmed.startsWith(`${SESSION_COOKIE_NAME}=`)) {
-      return decodeURIComponent(trimmed.slice(SESSION_COOKIE_NAME.length + 1));
-    }
-  }
-  return null;
-}
-
-export function getBearerToken(req: Request): string | null {
-  const header = req.headers.get("authorization");
-  if (!header?.startsWith("Bearer ")) return null;
-  const token = header.slice("Bearer ".length).trim();
-  return token || null;
-}
-
-function hostnameFromHost(host: string | null | undefined): string {
-  if (!host) return "";
-  const trimmed = host.trim().toLowerCase();
-  if (trimmed.startsWith("[")) {
-    const end = trimmed.indexOf("]");
-    return end === -1 ? trimmed : trimmed.slice(1, end);
-  }
-  return trimmed.split(":")[0] ?? "";
-}
-
-export function isLoopbackHostname(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "::1" || hostname === "0:0:0:0:0:0:0:1" || hostname.startsWith("127.");
-}
-
-export function isLoopbackRequest(req: Request): boolean {
-  return isLoopbackHostname(hostnameFromHost(req.headers.get("host")));
-}
-
-function hostnameFromOrigin(origin: string | null | undefined): string {
-  if (!origin) return "";
-  try {
-    return new URL(origin).hostname.toLowerCase();
-  } catch {
-    return "";
-  }
-}
-
-export function isSameOriginLoopbackRequest(req: Request): boolean {
-  const hostName = hostnameFromHost(req.headers.get("host"));
-  if (!isLoopbackHostname(hostName)) return false;
-  const origin = req.headers.get("origin");
-  if (!origin) return true;
-  return hostnameFromOrigin(origin) === hostName;
-}
+export {
+  getBearerToken,
+  getSessionCookie,
+  isLoopbackRequest,
+  isSameOriginLoopbackRequest,
+} from "./request-auth-common";
 
 function isAllowedHostname(req: Request, config: RemoteAuthConfig): boolean {
   if (config.allowedHostnames.length === 0) return true;
-  const hostName = hostnameFromHost(req.headers.get("host"));
-  return config.allowedHostnames.some((allowed) => allowed.toLowerCase() === hostName);
+  const host = req.headers.get("host") ?? "";
+  const hostname = host.split(":")[0]?.toLowerCase() ?? "";
+  return config.allowedHostnames.some((allowed) => allowed.toLowerCase() === hostname);
 }
 
 function sessionExists(config: RemoteAuthConfig, sessionId: string): boolean {
@@ -160,113 +123,72 @@ export function getClientRemoteContext(req: Request): {
   };
 }
 
-export function authorizeRequestEdge(req: Request): RequestAuthContext {
+export function resolveLivoPrincipal(req: Request): Extract<AuthPrincipal, { kind: "livo" }> | null {
+  const livoSession = readLivoSession(req);
+  return livoSession ? livoPrincipalFromSession(livoSession) as Extract<AuthPrincipal, { kind: "livo" }> : null;
+}
+
+export function resolveAuthPrincipal(req: Request): AuthPrincipal | null {
   const loopback = isLoopbackRequest(req);
-  const remoteEnabled = process.env.PI_WEB_REMOTE === "1";
+  const config = loadRemoteAuthConfig();
+  const remoteEnabled = isRemoteAccessEnabled();
+
+  if (process.env.PI_WEB_ALLOW_REMOTE_MUTATIONS === "1") {
+    return { kind: "open", reason: "allow_remote_mutations" };
+  }
 
   if (!remoteEnabled) {
     if (loopback && isSameOriginLoopbackRequest(req)) {
-      return { authorized: true, loopback: true, remoteEnabled: false, sessionId: null, readOnly: false, reason: null };
+      return { kind: "loopback" };
     }
-    return {
-      authorized: false,
-      loopback,
-      remoteEnabled: false,
-      sessionId: null,
-      readOnly: false,
-      reason: loopback ? "Cross-origin request rejected" : "Remote access is disabled",
-    };
+    return null;
   }
 
   if (loopback && isSameOriginLoopbackRequest(req)) {
-    return {
-      authorized: true,
-      loopback: true,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: false,
-      reason: null,
-    };
+    return { kind: "loopback" };
+  }
+
+  if (config && !isAllowedHostname(req, config)) {
+    return null;
   }
 
   const envToken = process.env.PI_WEB_REMOTE_TOKEN;
   const bearer = getBearerToken(req);
-  if (envToken && bearer && bearer.length === envToken.length && timingSafeEqual(Buffer.from(bearer), Buffer.from(envToken))) {
-    return {
-      authorized: true,
-      loopback,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: process.env.PI_WEB_REMOTE_READ_ONLY === "1",
-      reason: null,
-    };
+  if (envToken && bearer && timingSafeEqualString(bearer, envToken)) {
+    return { kind: "bearer", scope: "env" };
+  }
+
+  if (config?.tokenHash && bearer && verifySecret(bearer, config.tokenHash)) {
+    return { kind: "bearer", scope: "config" };
   }
 
   const secret = getSigningSecret();
   const cookieValue = getSessionCookie(req);
-  if (secret && cookieValue && parseSessionCookieValue(cookieValue, secret)) {
-    return {
-      authorized: true,
-      loopback,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: process.env.PI_WEB_REMOTE_READ_ONLY === "1",
-      reason: null,
-    };
+  if (secret && cookieValue) {
+    const parsed = parseSessionCookieValue(cookieValue, secret);
+    if (parsed && config && sessionExists(config, parsed.sessionId)) {
+      return {
+        kind: "remote",
+        sessionId: parsed.sessionId,
+        readOnly: Boolean(config.readOnly),
+      };
+    }
   }
 
-  if (process.env.PI_LIVO_SSO_ENABLED === "1" && readLivoSession(req)) {
-    return {
-      authorized: true,
-      loopback,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: false,
-      reason: null,
-    };
+  const livoSession = readLivoSession(req);
+  if (livoSession) {
+    return livoPrincipalFromSession(livoSession);
   }
 
-  if (process.env.PI_WEB_ALLOW_REMOTE_MUTATIONS === "1") {
-    return {
-      authorized: true,
-      loopback,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: false,
-      reason: null,
-    };
-  }
-
-  return {
-    authorized: false,
-    loopback,
-    remoteEnabled: true,
-    sessionId: null,
-    readOnly: false,
-    reason: "Authentication required",
-  };
+  return null;
 }
 
-export function authorizeRequest(req: Request): RequestAuthContext {
+function unauthorizedAuthContext(req: Request): RequestAuthContext {
   const loopback = isLoopbackRequest(req);
   const config = loadRemoteAuthConfig();
-  const remoteEnabled = Boolean(config?.enabled) || process.env.PI_WEB_REMOTE === "1";
-
-  if (process.env.PI_WEB_ALLOW_REMOTE_MUTATIONS === "1") {
-    return {
-      authorized: true,
-      loopback,
-      remoteEnabled,
-      sessionId: null,
-      readOnly: false,
-      reason: null,
-    };
-  }
+  const remoteEnabled = isRemoteAccessEnabled();
 
   if (!remoteEnabled) {
-    if (loopback && isSameOriginLoopbackRequest(req)) {
-      return { authorized: true, loopback: true, remoteEnabled: false, sessionId: null, readOnly: false, reason: null };
-    }
     return {
       authorized: false,
       loopback,
@@ -274,17 +196,6 @@ export function authorizeRequest(req: Request): RequestAuthContext {
       sessionId: null,
       readOnly: false,
       reason: loopback ? "Cross-origin request rejected" : "Remote access is disabled",
-    };
-  }
-
-  if (loopback && isSameOriginLoopbackRequest(req)) {
-    return {
-      authorized: true,
-      loopback: true,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: false,
-      reason: null,
     };
   }
 
@@ -299,57 +210,6 @@ export function authorizeRequest(req: Request): RequestAuthContext {
     };
   }
 
-  const envToken = process.env.PI_WEB_REMOTE_TOKEN;
-  const bearer = getBearerToken(req);
-  if (envToken && bearer && bearer.length === envToken.length && timingSafeEqual(Buffer.from(bearer), Buffer.from(envToken))) {
-    return {
-      authorized: true,
-      loopback,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: Boolean(config?.readOnly),
-      reason: null,
-    };
-  }
-
-  if (config?.tokenHash && bearer && verifySecret(bearer, config.tokenHash)) {
-    return {
-      authorized: true,
-      loopback,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: Boolean(config.readOnly),
-      reason: null,
-    };
-  }
-
-  const secret = getSigningSecret();
-  const cookieValue = getSessionCookie(req);
-  if (secret && cookieValue) {
-    const parsed = parseSessionCookieValue(cookieValue, secret);
-    if (parsed && config && sessionExists(config, parsed.sessionId)) {
-      return {
-        authorized: true,
-        loopback,
-        remoteEnabled: true,
-        sessionId: parsed.sessionId,
-        readOnly: Boolean(config.readOnly),
-        reason: null,
-      };
-    }
-  }
-
-  if (process.env.PI_LIVO_SSO_ENABLED === "1" && readLivoSession(req)) {
-    return {
-      authorized: true,
-      loopback,
-      remoteEnabled: true,
-      sessionId: null,
-      readOnly: false,
-      reason: null,
-    };
-  }
-
   return {
     authorized: false,
     loopback,
@@ -357,6 +217,30 @@ export function authorizeRequest(req: Request): RequestAuthContext {
     sessionId: null,
     readOnly: Boolean(config?.readOnly),
     reason: "Authentication required",
+  };
+}
+
+export function authorizeRequest(req: Request): RequestAuthContext {
+  const loopback = isLoopbackRequest(req);
+  const remoteEnabled = isRemoteAccessEnabled();
+  const config = loadRemoteAuthConfig();
+  const principal = resolveAuthPrincipal(req);
+
+  if (!principal) {
+    return unauthorizedAuthContext(req);
+  }
+
+  const readOnly = principal.kind === "bearer"
+    ? Boolean(config?.readOnly)
+    : principalReadOnly(principal);
+
+  return {
+    authorized: true,
+    loopback,
+    remoteEnabled,
+    sessionId: principal.kind === "remote" ? principal.sessionId : null,
+    readOnly,
+    reason: null,
   };
 }
 

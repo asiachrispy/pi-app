@@ -14,7 +14,7 @@ import { isTenantAgentDir } from "@/lib/session-reader";
  */
 export async function createAgentResourceLoader(cwd: string, agentDir: string): Promise<ResourceLoader> {
   const settingsManager = SettingsManager.create(cwd, agentDir);
-  const defaultPluginPaths = isTenantAgentDir(agentDir) ? defaultLivoPluginPaths() : [];
+  const defaultPluginPaths = isTenantAgentDir(agentDir) ? defaultLivoPluginPaths(agentDir) : [];
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,

@@ -1,9 +1,14 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getAgentDir } from "@/lib/agent-dir";
-import { getNamedCookie } from "@/lib/middleware-auth";
+import { isLivoSsoEnabled, resolveLivoWorkspaceRoot } from "@/lib/livo/config";
+import { resolveWorkbenchBasePath, workbenchReturnTo } from "@/lib/livo/workbench";
+import { pathBelongsToRoot } from "@/lib/livo/path-utils";
+import { getNamedCookie } from "@/lib/request-auth-common";
 import { issueSessionCookieValue, parseSessionCookieValue } from "@/lib/signed-session-cookie";
+
+export { isLivoIntegrationEnabled, isLivoSsoEnabled } from "@/lib/livo/config";
 
 export const LIVO_SESSION_COOKIE_NAME = "pi_livo_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -44,15 +49,6 @@ function readSecret(): string | null {
   return value && value.length >= 24 ? value : null;
 }
 
-export function isLivoSsoEnabled(): boolean {
-  return process.env.PI_LIVO_SSO_ENABLED === "1";
-}
-
-export function isLivoIntegrationEnabled(): boolean {
-  const mode = process.env.PI_LIVO_MODE;
-  return isLivoSsoEnabled() || process.env.PI_LIVO_INTEGRATION_ENABLED === "1" || mode === "cloud" || mode === "local";
-}
-
 function legacyStoreKey(sessionId: string, sessionSecret: string): string {
   return createHmac("sha256", sessionSecret).update(sessionId).digest("base64url");
 }
@@ -84,14 +80,16 @@ function normalizeStoredSession(storeKey: string, stored: StoredLivoSessionRecor
 
 export function normalizePiReturnTo(value: string | null | undefined): string {
   const origin = process.env.PI_PUBLIC_ORIGIN ?? "https://pi.gottao.com";
-  const raw = value || "/app/";
+  const raw = value || resolveWorkbenchBasePath();
   const url = raw.startsWith("/") ? new URL(raw, origin) : new URL(raw);
   const allowed = new URL(origin);
   if (url.protocol !== allowed.protocol || url.host !== allowed.host) {
     throw new Error("returnTo is not allowed");
   }
+  const workbenchBase = resolveWorkbenchBasePath();
   if (url.pathname === "/" && url.searchParams.has("session")) {
-    url.pathname = "/app/";
+    const withQuery = workbenchReturnTo(url.search);
+    return new URL(withQuery, origin).toString();
   }
   return url.toString();
 }
@@ -135,10 +133,6 @@ export function readLivoSessionCookieValue(value: string | null | undefined): St
   return normalizeStoredSession(resolvedStoreKey, stored);
 }
 
-export function hasLivoSessionCookie(req: Request): boolean {
-  return Boolean(getNamedCookie(req, LIVO_SESSION_COOKIE_NAME));
-}
-
 export function deleteLivoSession(req: Request): void {
   const session = readLivoSession(req);
   if (!session) return;
@@ -148,13 +142,7 @@ export function deleteLivoSession(req: Request): void {
 }
 
 export function livoUserWorkspaceRoot(livoUserId: string): string {
-  const root = process.env.PI_WEB_LIVO_WORKSPACE_ROOT ?? "/data/pi-agent/workspaces/livo";
-  return join(root, "users", livoUserId);
-}
-
-function pathBelongsToRoot(root: string, target: string): boolean {
-  const rel = relative(root, target);
-  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !isAbsolute(rel));
+  return join(resolveLivoWorkspaceRoot(), "users", livoUserId);
 }
 
 export function resolveLivoUserWorkspacePath(cwd: string | null | undefined, livoUserId: string): string | null {

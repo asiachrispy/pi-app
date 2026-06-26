@@ -5,7 +5,7 @@ import path from "path";
 import { collectSessionReferencedFiles, listAllSessions } from "@/lib/session-reader";
 import { filePathFromSegments, isPathAllowed, isRealPathAllowed, isReferencedFileAllowed, parseByteRange } from "@/lib/file-access";
 import { getAgentDir } from "@/lib/agent-dir";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { loadPiWebPreferences } from "@/lib/pi-web-preferences";
 import { getCachedAllowedRoots, setCachedAllowedRoots } from "@/lib/allowed-roots-cache";
 import { livoUserWorkspaceRoot, readLivoSession } from "@/lib/livo-sso";
@@ -313,8 +313,8 @@ export const GET = withTenant(async (
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) => {
-  const rejected = requireApiAuth(request);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(request);
+  if (isAuthError(auth)) return auth;
 
   try {
     const { path: segments } = await params;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
+import { withTenant } from "@/lib/livo/with-tenant";
 import {
   addExcludedProjectCwd,
   loadPiWebPreferences,
@@ -8,9 +9,11 @@ import {
 } from "@/lib/pi-web-preferences";
 
 /** POST: add cwds to excludedProjectCwds (always union). */
-export async function POST(req: Request) {
-  const rejected = rejectUnsafeMutation(req) || requireApiAuth(req);
-  if (rejected) return rejected;
+export const POST = withTenant(async (req: Request) => {
+  const mutationRejected = rejectUnsafeMutation(req);
+  if (mutationRejected) return mutationRejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   try {
     const body = await req.json() as { cwds?: string[] };
@@ -26,12 +29,14 @@ export async function POST(req: Request) {
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});
 
 /** DELETE ?cwd=... : remove a single cwd from excludedProjectCwds. */
-export async function DELETE(req: Request) {
-  const rejected = rejectUnsafeMutation(req) || requireApiAuth(req);
-  if (rejected) return rejected;
+export const DELETE = withTenant(async (req: Request) => {
+  const mutationRejected = rejectUnsafeMutation(req);
+  if (mutationRejected) return mutationRejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   try {
     const url = new URL(req.url);
@@ -46,4 +51,4 @@ export async function DELETE(req: Request) {
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});

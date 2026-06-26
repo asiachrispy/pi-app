@@ -1,39 +1,38 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { DefaultResourceLoader, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { DefaultResourceLoader, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
-import { requireApiAuth } from "@/lib/api-auth";
-import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/skills?cwd=<path>
 // Uses DefaultResourceLoader (same logic as AgentSession startup) so settings.json
 // skill paths, package skills, and .agents/skills directories are all included.
-export async function GET(req: Request) {
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+export const GET = withTenant(async (req: Request) => {
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   const { searchParams } = new URL(req.url);
   const cwd = searchParams.get("cwd");
   if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
 
   try {
-    const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
+    const loader = new DefaultResourceLoader({ cwd, agentDir: currentAgentDir() });
     await loader.reload();
     const { skills, diagnostics } = loader.getSkills();
     return NextResponse.json({ skills, diagnostics });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
-}
+});
 
 // PATCH /api/skills — toggle disable-model-invocation on a SKILL.md file
-export async function PATCH(req: Request) {
+export const PATCH = withTenant(async (req: Request) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
-  const livoRejected = rejectLivoGlobalConfigWrite(req);
-  if (livoRejected) return livoRejected;
 
   try {
     const body = await req.json() as { filePath: string; disableModelInvocation: boolean };
@@ -44,19 +43,14 @@ export async function PATCH(req: Request) {
     const content = readFileSync(filePath, "utf8");
     const key = "disable-model-invocation";
 
-    // Use parseFrontmatter to check current value, then do a surgical line edit
-    // to preserve the original YAML formatting of all other fields.
     const { frontmatter } = parseFrontmatter<Record<string, unknown>>(content);
     const alreadySet = Boolean(frontmatter[key]);
 
     let updated = content;
     if (disableModelInvocation && !alreadySet) {
-      // Add key after the opening --- line
       updated = content.replace(/^---\r?\n/, `---\n${key}: true\n`);
-      // If no frontmatter exists, create one
       if (updated === content) updated = `---\n${key}: true\n---\n${content}`;
     } else if (!disableModelInvocation && alreadySet) {
-      // Remove the key line entirely
       updated = content.replace(new RegExp(`^${key}\\s*:.*\\r?\\n`, "m"), "");
     }
 
@@ -65,4 +59,4 @@ export async function PATCH(req: Request) {
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
-}
+});

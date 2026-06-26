@@ -3,9 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/api-auth", () => ({
-  requireApiAuth: () => null,
-}));
+vi.mock("@/lib/api-auth", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-auth")>("@/lib/api-auth");
+  return {
+    ...actual,
+    requireApiAuth: () => ({ kind: "loopback" }),
+  };
+});
 
 const livoSession = vi.hoisted(() => ({ value: null as null | { livoUserId: string } }));
 

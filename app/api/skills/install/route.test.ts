@@ -104,7 +104,7 @@ describe("/api/skills/install — global install mirrors into dev agent dir", ()
       body: JSON.stringify({ package: "owner/new-skill", scope: "global" }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req, {} as never);
     expect(res.status).toBe(200);
     const data = (await res.json()) as { success: boolean; mirrored: string[] };
     expect(data.success).toBe(true);
@@ -137,7 +137,7 @@ describe("/api/skills/install — global install mirrors into dev agent dir", ()
       body: JSON.stringify({ package: "owner/shared-skill", scope: "global" }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req, {} as never);
     expect(res.status).toBe(200);
 
     // The new upstream content should have replaced the dev's stale copy.
@@ -165,7 +165,7 @@ describe("/api/skills/install — global install mirrors into dev agent dir", ()
       body: JSON.stringify({ package: "owner/prod-only-skill", scope: "global" }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req, {} as never);
     expect(res.status).toBe(200);
     const data = (await res.json()) as { success: boolean; mirrored: string[] };
     expect(data.success).toBe(true);
@@ -197,7 +197,7 @@ describe("/api/skills/install — global install mirrors into dev agent dir", ()
       body: JSON.stringify({ package: "owner/some-other-skill", scope: "global" }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req, {} as never);
     expect(res.status).toBe(200);
     const data = (await res.json()) as { success: boolean; mirrored: string[] };
     expect(data.mirrored).toEqual(["some-other-skill"]);
@@ -219,7 +219,7 @@ describe("/api/skills/install — global install mirrors into dev agent dir", ()
       },
       body: JSON.stringify({ package: "owner/bad", scope: "global" }),
     });
-    const res = await POST(req);
+    const res = await POST(req, {} as never);
     expect(res.status).toBe(500);
     const data = (await res.json()) as { error: string };
     expect(data.error).toContain("Some install error");

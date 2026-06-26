@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { homedir } from "os";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 
 export async function GET(req: Request) {
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   return NextResponse.json({ home: homedir() });
 }

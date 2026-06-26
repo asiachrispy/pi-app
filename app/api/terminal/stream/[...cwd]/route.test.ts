@@ -5,9 +5,13 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-vi.mock("@/lib/api-auth", () => ({
-  requireApiAuth: () => null,
-}));
+vi.mock("@/lib/api-auth", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-auth")>("@/lib/api-auth");
+  return {
+    ...actual,
+    requireApiAuth: () => ({ kind: "loopback" }),
+  };
+});
 
 let testTmpCwd = "/";
 vi.mock("@/lib/session-reader", () => ({

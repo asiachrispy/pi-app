@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { getAgentDir } from "@/lib/agent-dir";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
 import { sanitizePromptInput } from "@/lib/prompt-guard";
 import { isKnownSceneId, type SceneOverrides } from "@/lib/scenes";
 
@@ -34,7 +34,7 @@ function serialize<T>(work: () => T | Promise<T>): Promise<T> {
 }
 
 function getStorePath(): string {
-  return join(getAgentDir(), FILENAME);
+  return join(currentAgentDir(), FILENAME);
 }
 
 function readFile(): SceneOverridesFile {

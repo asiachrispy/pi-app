@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
-import { requireApiAuth } from "@/lib/api-auth";
-import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
+import { withTenant } from "@/lib/livo/with-tenant";
 import { isKnownSceneId } from "@/lib/scenes";
 import {
   clearSceneOverride,
@@ -11,17 +11,15 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function PUT(
+export const PUT = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ sceneId: string }> },
-) {
+) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
-  const livoRejected = rejectLivoGlobalConfigWrite(req);
-  if (livoRejected) return livoRejected;
 
-  const authRejected = requireApiAuth(req);
-  if (authRejected) return authRejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   const { sceneId } = await params;
   if (!isKnownSceneId(sceneId)) {
@@ -39,19 +37,17 @@ export async function PUT(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(
+export const DELETE = withTenant(async (
   req: Request,
   { params }: { params: Promise<{ sceneId: string }> },
-) {
+) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
-  const livoRejected = rejectLivoGlobalConfigWrite(req);
-  if (livoRejected) return livoRejected;
 
-  const authRejected = requireApiAuth(req);
-  if (authRejected) return authRejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   const { sceneId } = await params;
   if (!isKnownSceneId(sceneId)) {
@@ -64,4 +60,4 @@ export async function DELETE(
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});

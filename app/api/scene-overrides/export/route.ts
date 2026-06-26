@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
+import { withTenant } from "@/lib/livo/with-tenant";
 import { readSceneOverrides } from "@/lib/scene-overrides";
 import { buildScenePack } from "@/lib/scene-pack";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+export const GET = withTenant(async (req: Request) => {
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   const url = new URL(req.url);
   const sceneId = url.searchParams.get("sceneId");
@@ -20,4 +21,4 @@ export async function GET(req: Request) {
       "Content-Disposition": `attachment; filename="${filename.replace(/"/g, "")}"`,
     },
   });
-}
+});

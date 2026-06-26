@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { livoUserWorkspaceRoot, readLivoSession } from "@/lib/livo-sso";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
 import { rejectLivoIntegrationDisabled } from "@/lib/livo-route-guard";
@@ -12,8 +12,8 @@ export async function GET(req: Request) {
   const disabled = rejectLivoIntegrationDisabled();
   if (disabled) return disabled;
 
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   const livoSession = readLivoSession(req);
   if (!livoSession) {

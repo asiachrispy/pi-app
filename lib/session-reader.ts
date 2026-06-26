@@ -1,6 +1,7 @@
 import { isAbsolute, join, resolve } from "node:path";
 import { SessionManager, buildSessionContext as piBuildSessionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@/lib/agent-dir";
+import { resolveLivoWorkspaceRoot } from "@/lib/livo/config";
 import { TENANT_AGENT_DIR_NAME } from "@/lib/livo/tenant-context";
 import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, SessionMessageEntry, AssistantMessage } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
@@ -41,7 +42,7 @@ async function listPiSessions(agentDir: string): Promise<PiSessionInfo[]> {
 
 /** agentDir 是否为 Livo 租户目录（落在工作区根下、以 .pi-agent 结尾的单层布局）。导出供测试。 */
 export function isTenantAgentDir(agentDir: string): boolean {
-  const livoRoot = resolve(process.env.PI_WEB_LIVO_WORKSPACE_ROOT ?? "/data/pi-agent/workspaces/livo");
+  const livoRoot = resolveLivoWorkspaceRoot();
   const resolved = resolve(agentDir);
   return resolved.startsWith(livoRoot + "/") && resolved.endsWith(`${TENANT_AGENT_DIR_NAME}`);
 }

@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTerminalManager, promptForCwd } from "@/lib/terminal/manager";
 import { rejectDisabledTerminal } from "@/lib/terminal/access";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { isPathAllowed, filePathFromSegments } from "@/lib/file-access";
 import { listAllSessions } from "@/lib/session-reader";
 import { getAgentDir } from "@/lib/agent-dir";
@@ -49,8 +49,8 @@ export const GET = withTenant(async (
   const disabled = rejectDisabledTerminal();
   if (disabled) return disabled;
 
-  const rejected = requireApiAuth(request);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(request);
+  if (isAuthError(auth)) return auth;
 
   const { cwd: segments } = await ctx.params;
   const cwd = filePathFromSegments(segments);

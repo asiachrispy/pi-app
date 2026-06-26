@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isLivoIntegrationEnabled } from "@/lib/livo-sso";
+import { isLivoIntegrationEnabled } from "@/lib/livo/config";
 
 export function rejectLivoIntegrationDisabled(): NextResponse | null {
   if (isLivoIntegrationEnabled()) return null;

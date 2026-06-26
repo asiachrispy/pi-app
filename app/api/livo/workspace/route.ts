@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { homedir } from "os";
-import { isAbsolute, join, relative, resolve } from "path";
+import { join, resolve } from "path";
 import { NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
+import { resolveLivoWorkspaceRoot } from "@/lib/livo/config";
+import { workbenchPublicUrl } from "@/lib/livo/workbench";
+import { pathBelongsToRoot } from "@/lib/livo/path-utils";
 import { rejectLivoIntegrationDisabled } from "@/lib/livo-route-guard";
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
@@ -43,20 +45,11 @@ const LIVO_AGENTS_MD = `# Livo Meeting Execution Rules
 - ⚠️ 只能你来做
 `;
 
-function livoRoot(): string {
-  return resolve(process.env.PI_WEB_LIVO_WORKSPACE_ROOT || join(homedir(), "livo"));
-}
-
 function safeSegment(value: unknown, field: string): string | NextResponse {
   if (typeof value !== "string" || !SAFE_SEGMENT.test(value)) {
     return NextResponse.json({ error: `Invalid ${field}` }, { status: 400 });
   }
   return value;
-}
-
-function isInside(parent: string, child: string): boolean {
-  const rel = relative(parent, child);
-  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !isAbsolute(rel));
 }
 
 // POST /api/livo/workspace  body: { userId: string; meetingId: string }
@@ -65,8 +58,8 @@ export async function POST(req: Request) {
   const disabled = rejectLivoIntegrationDisabled();
   if (disabled) return disabled;
 
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   try {
     const body = await req.json() as {
@@ -81,10 +74,10 @@ export async function POST(req: Request) {
     const meetingId = safeSegment(body.meetingId, "meetingId");
     if (meetingId instanceof NextResponse) return meetingId;
 
-    const root = livoRoot();
+    const root = resolveLivoWorkspaceRoot();
     const cwd = resolve(root, "users", userId);
     const meetingPath = resolve(cwd, "meetings", meetingId);
-    if (!isInside(root, cwd) || !isInside(root, meetingPath)) {
+    if (!pathBelongsToRoot(root, cwd) || !pathBelongsToRoot(root, meetingPath)) {
       return NextResponse.json({ error: "Workspace escapes Livo root" }, { status: 400 });
     }
 
@@ -104,7 +97,10 @@ export async function POST(req: Request) {
     invalidateAllowedRootsCache();
     const workspaceId = `livo:${userId}`;
     const publicOrigin = process.env.PI_PUBLIC_ORIGIN || "https://pi.gottao.com";
-    const workspaceUrl = `${publicOrigin.replace(/\/+$/, "")}/app/?workspace=${encodeURIComponent(workspaceId)}&meeting=${encodeURIComponent(meetingId)}`;
+    const workspaceUrl = workbenchPublicUrl(
+      publicOrigin,
+      `?workspace=${encodeURIComponent(workspaceId)}&meeting=${encodeURIComponent(meetingId)}`,
+    );
     return NextResponse.json({ success: true, workspaceId, meetingId, cwd, meetingPath, workspaceUrl });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

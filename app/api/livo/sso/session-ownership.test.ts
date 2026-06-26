@@ -15,9 +15,13 @@ vi.mock("@/lib/livo-sso", () => ({
   livoUserWorkspaceRoot: (userId: string) => join(ownerRoot.value, "users", userId),
 }));
 
-vi.mock("@/lib/api-auth", () => ({
-  requireApiAuth: () => null,
-}));
+vi.mock("@/lib/api-auth", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-auth")>("@/lib/api-auth");
+  return {
+    ...actual,
+    requireApiAuth: () => ({ kind: "loopback" }),
+  };
+});
 
 vi.mock("@/lib/local-request-guard", () => ({
   rejectUnsafeMutation: () => null,

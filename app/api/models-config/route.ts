@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { getAgentDir } from "@/lib/agent-dir";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { normalizeModelsJson, type NormalizedModelsJson } from "@/lib/models-config-normalize";
 import { destroyAllRpcSessions } from "@/lib/rpc-manager";
 import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
@@ -32,8 +32,8 @@ function writeModelsJson(data: NormalizedModelsJson): void {
 }
 
 export async function GET(req: Request) {
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
   return NextResponse.json(readModelsJson());
 }
 

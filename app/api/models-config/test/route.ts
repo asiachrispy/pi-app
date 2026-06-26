@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai/compat";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { isChatTestableModelId, normalizeModelEntry, normalizeProviderEntry, isReasoningEffortUnsupportedError } from "@/lib/models-config-normalize";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +27,8 @@ function getAssistantText(message: AssistantMessage): string {
 }
 
 export async function POST(req: Request) {
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   let tempDir: string | undefined;
 

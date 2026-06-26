@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@/lib/agent-dir";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
 
 export type ToolMode = "simple" | "default" | "full";
 
@@ -26,7 +26,7 @@ export interface PiWebPreferences {
 export const PI_WEB_PREFERENCES_FILENAME = "pi-web-preferences.json";
 
 function preferencesPath(): string {
-  return join(getAgentDir(), PI_WEB_PREFERENCES_FILENAME);
+  return join(currentAgentDir(), PI_WEB_PREFERENCES_FILENAME);
 }
 
 export function loadPiWebPreferences(): PiWebPreferences {

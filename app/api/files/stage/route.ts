@@ -3,7 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { getAgentDir } from "@/lib/agent-dir";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 
 const MAX_FILES = 20;
 const MAX_BYTES_PER_FILE = 50 * 1024 * 1024;
@@ -14,8 +14,8 @@ function safeBaseName(name: string): string {
 }
 
 export async function POST(req: Request) {
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   try {
     const body = (await req.json()) as {

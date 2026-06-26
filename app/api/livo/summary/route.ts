@@ -1,20 +1,12 @@
 import { existsSync, readFileSync } from "fs";
-import { homedir } from "os";
-import { isAbsolute, join, relative, resolve } from "path";
+import { join, resolve } from "path";
 import { NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/api-auth";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
+import { resolveLivoWorkspaceRoot } from "@/lib/livo/config";
+import { pathBelongsToRoot } from "@/lib/livo/path-utils";
 import { rejectLivoIntegrationDisabled } from "@/lib/livo-route-guard";
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
-
-function livoRoot(): string {
-  return resolve(process.env.PI_WEB_LIVO_WORKSPACE_ROOT || join(homedir(), "livo"));
-}
-
-function pathBelongsToRoot(root: string, target: string): boolean {
-  const rel = relative(root, target);
-  return rel === "" || (!rel.startsWith("..") && rel !== ".." && !isAbsolute(rel));
-}
 
 // GET /api/livo/summary?userId=...&meeting=...
 // Server-to-server read-only pull of a meeting's outputs/summary.md.
@@ -25,8 +17,8 @@ export async function GET(req: Request) {
   const disabled = rejectLivoIntegrationDisabled();
   if (disabled) return disabled;
 
-  const rejected = requireApiAuth(req);
-  if (rejected) return rejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   const url = new URL(req.url);
   const userId = url.searchParams.get("userId") ?? "";
@@ -39,7 +31,7 @@ export async function GET(req: Request) {
   }
 
   // Resolve strictly under the user's own workspace; reject any escape.
-  const userRoot = resolve(livoRoot(), "users", userId);
+  const userRoot = resolve(resolveLivoWorkspaceRoot(), "users", userId);
   const summaryPath = resolve(userRoot, "meetings", meetingId, "outputs", "summary.md");
   if (!pathBelongsToRoot(userRoot, summaryPath)) {
     return NextResponse.json({ error: "Path not allowed" }, { status: 403 });

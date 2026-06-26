@@ -1,20 +1,18 @@
 import { NextResponse } from "next/server";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
-import { requireApiAuth } from "@/lib/api-auth";
-import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
+import { isAuthError, requireApiAuth } from "@/lib/api-auth";
+import { withTenant } from "@/lib/livo/with-tenant";
 import { mergeSceneOverrides, readSceneOverrides } from "@/lib/scene-overrides";
 import { previewScenePackImport, validateScenePack } from "@/lib/scene-pack";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export const POST = withTenant(async (req: Request) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
-  const livoRejected = rejectLivoGlobalConfigWrite(req);
-  if (livoRejected) return livoRejected;
 
-  const authRejected = requireApiAuth(req);
-  if (authRejected) return authRejected;
+  const auth = requireApiAuth(req);
+  if (isAuthError(auth)) return auth;
 
   try {
     const body = await req.json() as {
@@ -65,4 +63,4 @@ export async function POST(req: Request) {
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
-}
+});

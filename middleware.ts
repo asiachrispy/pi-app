@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authorizeMiddlewareRequest, getSessionCookie, hasValidLivoSessionCookie, isRemoteAccessEnabledEnv } from "./lib/middleware-auth";
+import { hasBearerPrefix, getSessionCookie } from "./lib/request-auth-common";
+import { authorizeMiddlewareRequest, hasValidLivoSessionCookie, isRemoteAccessEnabledEnv } from "./lib/middleware-auth";
+import { isLivoSsoEnabled } from "./lib/livo/config";
+import {
+  buildSsoStartUrl,
+  isWorkbenchEntry,
+  resolveWorkbenchBasePath,
+  workbenchEntryPathname,
+  workbenchMiddlewareMatchers,
+  WORKBENCH_ENTRY_HEADER,
+} from "./lib/livo/workbench";
 
 function isPublicSharePath(pathname: string): boolean {
   return pathname === "/api/share" || pathname.startsWith("/api/share/");
@@ -32,15 +42,13 @@ function forbidden(reason: string): NextResponse {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isAppEntry = pathname === "/app" || pathname === "/app/" || (
-    pathname === "/" && request.headers.get("x-pi-workbench-entry") === "/app"
-  );
-  if (process.env.PI_LIVO_SSO_ENABLED === "1" && isAppEntry) {
+  if (isLivoSsoEnabled() && isWorkbenchEntry(pathname, request.headers)) {
     if (!await hasValidLivoSessionCookie(request)) {
       const start = new URL("/api/livo/sso/start", request.url);
-      const appPath = pathname === "/app" || request.headers.get("x-pi-workbench-entry") === "/app"
-        ? "/app/"
-        : pathname;
+      const useWorkbenchPath = pathname === workbenchEntryPathname()
+        || pathname === resolveWorkbenchBasePath()
+        || request.headers.get(WORKBENCH_ENTRY_HEADER) === workbenchEntryPathname();
+      const appPath = useWorkbenchPath ? resolveWorkbenchBasePath() : pathname;
       start.searchParams.set("returnTo", `${appPath}${request.nextUrl.search}`);
       return NextResponse.redirect(start);
     }
@@ -56,8 +64,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Bearer tokens and session cookies are verified in route handlers (disk-backed auth).
-  const authHeader = request.headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
+  if (hasBearerPrefix(request)) {
     return NextResponse.next();
   }
   if (getSessionCookie(request)) {
@@ -83,5 +90,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/app", "/app/", "/api/:path*"],
+  matcher: ["/", ...workbenchMiddlewareMatchers(), "/api/:path*"],
 };

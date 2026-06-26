@@ -3,9 +3,13 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/api-auth", () => ({
-  requireApiAuth: () => null,
-}));
+vi.mock("@/lib/api-auth", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-auth")>("@/lib/api-auth");
+  return {
+    ...actual,
+    requireApiAuth: () => ({ kind: "loopback" }),
+  };
+});
 
 function getSummary(query: string): Request {
   return new Request(`http://127.0.0.1:30142/api/livo/summary?${query}`, {

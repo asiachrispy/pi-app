@@ -8,9 +8,13 @@ import path from "path";
 // Stub requireApiAuth so the test doesn't depend on the request being
 // authenticated. The /state route's real auth is exercised by integration
 // tests in CI; here we focus on the cwd resolution + manager plumbing.
-vi.mock("@/lib/api-auth", () => ({
-  requireApiAuth: () => null,
-}));
+vi.mock("@/lib/api-auth", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-auth")>("@/lib/api-auth");
+  return {
+    ...actual,
+    requireApiAuth: () => ({ kind: "loopback" }),
+  };
+});
 
 // Stub listAllSessions so the test's tmpCwd is in the allowed roots.
 let testTmpCwd = "/";

@@ -5,26 +5,32 @@ import { homedir } from "os";
 import { NextResponse } from "next/server";
 import { runNpx } from "@/lib/npx";
 import { rejectUnsafeMutation } from "@/lib/local-request-guard";
-import { getAgentDir, usesIsolatedAgentDataDir } from "@/lib/agent-dir";
+import { usesIsolatedAgentDataDir } from "@/lib/agent-dir";
+import { currentAgentDir } from "@/lib/livo/tenant-gate";
+import { withTenant } from "@/lib/livo/with-tenant";
+import { readLivoSession } from "@/lib/livo-sso";
 import { mirrorNamedGlobalSkills, parseInstalledSkillNames } from "@/lib/skill-mirror";
-import { rejectLivoGlobalConfigWrite } from "@/lib/livo/global-config-guard";
 
 export const dynamic = "force-dynamic";
 
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
 
 // POST /api/skills/install  body: { package: string; scope: "global" | "project"; cwd?: string }
-export async function POST(req: Request) {
+export const POST = withTenant(async (req: Request) => {
   const rejected = rejectUnsafeMutation(req);
   if (rejected) return rejected;
-  const livoRejected = rejectLivoGlobalConfigWrite(req);
-  if (livoRejected) return livoRejected;
 
   try {
     const { package: pkg, scope, cwd } = await req.json() as { package?: string; scope?: string; cwd?: string };
     if (!pkg?.trim()) return NextResponse.json({ error: "package required" }, { status: 400 });
 
     const isGlobal = scope !== "project";
+    if (isGlobal && readLivoSession(req)) {
+      return NextResponse.json(
+        { error: "Global skill install is read-only for Livo tenants" },
+        { status: 403 },
+      );
+    }
     const args = ["skills", "add", pkg.trim(), "-y", "--agent", "pi"];
     if (isGlobal) args.push("-g");
 
@@ -55,7 +61,7 @@ export async function POST(req: Request) {
     if (isGlobal && usesIsolatedAgentDataDir()) {
       const installedNames = parseInstalledSkillNames(output);
       if (installedNames.length > 0) {
-        const targetDir = join(getAgentDir(), "skills");
+        const targetDir = join(currentAgentDir(), "skills");
         await mkdir(targetDir, { recursive: true });
         mirrored = await mirrorNamedGlobalSkills(
           upstreamGlobalSkillsDir,
@@ -76,4 +82,4 @@ export async function POST(req: Request) {
     const output = ((err.stdout ?? "") + (err.stderr ?? "")).replace(ANSI_RE, "");
     return NextResponse.json({ error: output || (err.message ?? String(e)) }, { status: 500 });
   }
-}
+});
