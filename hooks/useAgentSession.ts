@@ -5,6 +5,7 @@ import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ToolEntry } from "@/components/ToolPanel";
+import type { SlashCommandEntry } from "@/lib/slash-commands";
 
 export interface SessionData {
   sessionId: string;
@@ -118,6 +119,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [isCompacting, setIsCompacting] = useState(false);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
+  const [slashCommands, setSlashCommands] = useState<SlashCommandEntry[]>([]);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
@@ -218,6 +220,28 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       console.error("Failed to load tools:", e);
     }
   }, [setToolPresetState]);
+
+  const loadCommands = useCallback(async (sid: string) => {
+    try {
+      const result = await sendAgentCommand<{ commands: SlashCommandEntry[] }>(sid, { type: "get_commands" });
+      setSlashCommands(result?.commands ?? []);
+    } catch (e) {
+      console.error("Failed to load slash commands:", e);
+      setSlashCommands([]);
+    }
+  }, []);
+
+  const loadWorkspaceCommands = useCallback(async (cwd: string) => {
+    try {
+      const res = await fetch(`/api/slash-commands?cwd=${encodeURIComponent(cwd)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json() as { commands?: SlashCommandEntry[] };
+      setSlashCommands(result.commands ?? []);
+    } catch (e) {
+      console.error("Failed to load workspace slash commands:", e);
+      setSlashCommands([]);
+    }
+  }, []);
 
   const connectEvents = useCallback((sid: string) => {
     if (eventSourceRef.current) {
@@ -385,6 +409,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const result = await res.json() as { sessionId: string };
         const realId = result.sessionId;
         sessionIdRef.current = realId;
+        void loadCommands(realId);
         connectEvents(realId);
         onSessionCreated?.({
           id: realId,
@@ -411,7 +436,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, onSessionCreated]);
+  }, [isNew, newSessionCwd, newSessionModel, toolPreset, thinkingLevel, session, agentRunning, connectEvents, loadCommands, onSessionCreated]);
 
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -592,6 +617,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (session) {
       sessionIdRef.current = session.id;
       loadSession(session.id, true, true).then((agentState) => {
+        loadCommands(session.id);
         if (agentState?.running) {
           loadTools(session.id);
           if (agentState.state?.isStreaming) {
@@ -614,6 +640,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!isNew || !newSessionCwd) return;
+    sessionIdRef.current = null;
+    void loadWorkspaceCommands(newSessionCwd);
+  }, [isNew, newSessionCwd, loadWorkspaceCommands]);
 
   useEffect(() => {
     onSystemPromptChange?.(systemPrompt);
@@ -695,6 +727,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, currentModel, displayModel, sessionStats,
     agentPhase,
+    slashCommands,
     isNew,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,

@@ -97,6 +97,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, displayModel: displayModelValue, sessionStats,
     agentPhase,
+    slashCommands,
     isNew,
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
@@ -192,6 +193,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       retryInfo={retryInfo}
       soundEnabled={soundEnabled}
       onSoundToggle={onSoundToggle}
+      slashCommandsEnabled={slashCommands.length > 0}
+      slashCommands={slashCommands}
     />
   );
 
