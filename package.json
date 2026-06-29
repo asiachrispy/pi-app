@@ -1,6 +1,6 @@
 {
   "name": "pi-app",
-  "version": "0.8.14",
+  "version": "0.8.15",
   "description": "Web UI for the pi coding agent",
   "license": "MIT",
   "homepage": "https://github.com/asiachrispy/pi-app",
@@ -20,6 +20,7 @@
     "scripts/install-pi-cli-from-app.mjs",
     "scripts/uninstall-cli.mjs",
     "scripts/cli-link-common.mjs",
+    "scripts/patch-next-generate-build-id.mjs",
     ".next",
     "!.next/cache",
     "!.next/dev",
