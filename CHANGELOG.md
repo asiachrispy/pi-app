@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **上游 pi-web 同步（upstream/main 5e21e16）**：合入 extension UI 请求/状态/Widget 通道、session stats 面板、markdown 渲染增强、`README.zh-CN.md` 与相关依赖更新；保留本地 Livo、多租户、桌面 bundle 与 `@livos` alias 部署路径。
 - **Livo M4 预算 + usage 回调**（#12c / M4）：`lib/livo/check-budget.ts`、`lib/livo/usage-callback.ts`；global-config-guard 用 `resolveLivoPrincipal`。
 - **Livo M3 token usage ledger**（#12b）：`lib/livo/record-usage.ts` + `token-usage.jsonl`；`buildTenantTokenUsage` 与 ledger 去重合并。
 - **Livo M2 internal verify + SSO 单层**（#10 / #11b）：`/api/internal/session/exists`、`hasValidLivoSessionWithStore`、`PI_INTERNAL_VERIFY_TOKEN`。

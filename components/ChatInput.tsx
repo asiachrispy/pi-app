@@ -16,6 +16,7 @@ import { normalizeFilePathRef, type FilePathRef } from "@/lib/message-file-refs"
 import { pickFilePathsNative, stageFilesFromBrowser } from "@/lib/stage-uploaded-files";
 import { TOOL_PRESET_LEVELS, TOOL_PRESET_LEVEL_TO_VALUE, toolPresetValueToLevel } from "@/lib/chat-input-tool-presets";
 import { FileAttachmentChip } from "./FileAttachmentChip";
+import type { BuiltinSlashCommandResult, CompactResultInfo, SlashCommandInfo } from "@/hooks/useAgentSession";
 
 function displayCompactError(compactError: string | null, t: (key: TranslationKey) => string): string | null {
   if (!compactError) return null;
@@ -47,6 +48,7 @@ interface Props {
   /** Token/tool/retry phase: Steer/Follow-up chrome (orange border, inline buttons). */
   steerMode?: boolean;
   model?: { provider: string; modelId: string } | null;
+  isAutoModelSelection?: boolean;
   modelNames?: Record<string, string>;
   modelList?: { id: string; name: string; provider: string; input?: ("text" | "image")[] }[];
   supportsImages?: boolean;
@@ -55,6 +57,7 @@ interface Props {
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
   compactError?: string | null;
+  compactResult?: CompactResultInfo | null;
   toolPreset?: "none" | "default" | "full";
   onToolPresetChange?: (preset: "none" | "default" | "full") => void;
   toolMode?: ToolMode;
@@ -70,7 +73,11 @@ interface Props {
   cloning?: boolean;
   sessionId?: string | null;
   slashCommandsEnabled?: boolean;
-  slashCommands?: SlashCommandEntry[];
+  slashCommands?: SlashCommandInfo[];
+  slashCommandsLoading?: boolean;
+  onLoadSlashCommands?: () => Promise<SlashCommandInfo[]> | SlashCommandInfo[];
+  onBuiltinCommand?: (message: string) => Promise<BuiltinSlashCommandResult>;
+  onPromptWithStreamingBehavior?: (message: string, behavior: "steer" | "followUp", images?: AttachedImage[]) => void;
   onOpenSettings?: () => void;
   onOpenFile?: (filePath: string, fileName: string) => void;
 }
@@ -94,6 +101,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   sessionId = null,
   slashCommandsEnabled = false,
   slashCommands = [],
+  onLoadSlashCommands,
+  onBuiltinCommand,
+  onPromptWithStreamingBehavior,
   onOpenFile,
 }: Props, ref) {
   const { t } = useI18n();
@@ -264,10 +274,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const hasAttachments = attachedImages.length > 0 || attachedFiles.length > 0;
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const msg = value.trim();
     if (!msg && !hasAttachments) return;
     if (isStreaming) return;
+    if (!attachedImages.length && !attachedFiles.length && msg.startsWith("/") && onBuiltinCommand) {
+      const result = await onBuiltinCommand(msg);
+      if (result.handled) {
+        if (!result.error) {
+          setValue("");
+          if (textareaRef.current) textareaRef.current.style.height = "auto";
+        }
+        return;
+      }
+    }
     onSend(
       msg,
       attachedImages.length ? attachedImages : undefined,
@@ -279,13 +299,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, hasAttachments, attachedImages, attachedFiles, isStreaming, onSend, clearImages, clearAttachedFiles]);
+  }, [value, hasAttachments, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearImages, clearAttachedFiles]);
 
   const sendQueued = useCallback((mode: "steer" | "followup") => {
     const msg = value.trim();
     if (!msg && !hasAttachments) return;
     const images = attachedImages.length ? attachedImages : undefined;
     const refs = attachedFiles.length ? attachedFiles : undefined;
+    if (msg.startsWith("/") && onPromptWithStreamingBehavior) {
+      onPromptWithStreamingBehavior(msg, mode === "steer" ? "steer" : "followUp", images);
+      setValue("");
+      clearImages();
+      clearAttachedFiles();
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      return;
+    }
     if (mode === "steer" && onSteer) {
       onSteer(msg, images, refs);
     } else if (mode === "followup" && onFollowUp) {
@@ -295,7 +323,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     clearImages();
     clearAttachedFiles();
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [value, hasAttachments, attachedImages, attachedFiles, onSteer, onFollowUp, clearImages, clearAttachedFiles]);
+  }, [value, hasAttachments, attachedImages, attachedFiles, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearImages, clearAttachedFiles]);
 
   const slashCompletion = useMemo(
     () => (slashCommandsEnabled ? getSlashCompletionAtCursor(value, cursorPos) : null),
@@ -310,6 +338,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   useEffect(() => {
     setSlashHighlight(0);
   }, [slashCompletion?.query]);
+
+  useEffect(() => {
+    if (!slashCompletion || !slashCommandsEnabled || !onLoadSlashCommands) return;
+    void Promise.resolve(onLoadSlashCommands()).catch(() => {});
+  }, [slashCompletion?.query, slashCommandsEnabled, onLoadSlashCommands]);
 
   // Cleanup the auto-dismiss timer on unmount to avoid setting state on a
   // dead component if the user navigates away mid-toast.

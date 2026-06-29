@@ -6,6 +6,7 @@ import { rejectUnsafeMutation } from "@/lib/local-request-guard";
 import { rememberWorkspaceCwd } from "@/lib/pi-web-preferences";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
 import { readLivoSession, resolveLivoUserWorkspacePath } from "@/lib/livo-sso";
+import { allowFileRoot } from "@/lib/file-access";
 
 function normalizeCwd(cwd: string): string {
   if (cwd === "~") return homedir();
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
 
     try {
       rememberWorkspaceCwd(normalizedCwd);
+      allowFileRoot(normalizedCwd);
       // The directory just entered the recent list — drop the cached allowed-roots
       // set so the next file request authorizes it immediately instead of 403-ing
       // until the TTL lapses.

@@ -3,10 +3,11 @@ import { SessionManager, buildSessionContext as piBuildSessionContext } from "@e
 import { getAgentDir } from "@/lib/agent-dir";
 import { resolveLivoWorkspaceRoot } from "@/lib/livo/config";
 import { TENANT_AGENT_DIR_NAME } from "@/lib/livo/tenant-context";
-import type { SessionEntry, SessionInfo, SessionContext, SessionTreeNode, SessionMessageEntry, AssistantMessage } from "./types";
+import type { AgentMessage, SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage } from "./types";
+import type { SessionMessageEntry } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { extractFileRefsFromText } from "./message-file-refs";
-import { normalizeAgentMessage } from "./normalize";
+import { normalizeAgentMessage, normalizeToolCalls } from "./normalize";
 import { loadPiWebPreferences } from "./pi-web-preferences";
 import { readProductSessionMetadataMap } from "./scene-metadata";
 import { getPickerCwds, isSystemTempCwd } from "./session-projects";
@@ -312,34 +313,36 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     }
   }
 
-  const entryIds: string[] = [];
+  const contextEntryIds: string[] = [];
   if (compactionId) {
     // The first message in piCtx.messages is the synthetic compaction summary — map to compaction entry id
-    entryIds.push(compactionId);
+    contextEntryIds.push(compactionId);
     const compactionIdx = path.findIndex((e) => e.id === compactionId);
     const firstKeptIdx = firstKeptEntryId
       ? path.findIndex((e, i) => i < compactionIdx && e.id === firstKeptEntryId)
       : -1;
     const startIdx = firstKeptIdx >= 0 ? firstKeptIdx : compactionIdx;
     for (let i = startIdx; i < compactionIdx; i++) {
-      if (path[i].type === "message") entryIds.push(path[i].id);
+      if (isContextMessageEntry(path[i])) contextEntryIds.push(path[i].id);
     }
     for (let i = compactionIdx + 1; i < path.length; i++) {
-      if (path[i].type === "message") entryIds.push(path[i].id);
+      if (isContextMessageEntry(path[i])) contextEntryIds.push(path[i].id);
     }
   } else {
     for (const e of path) {
-      if (e.type === "message") entryIds.push(e.id);
+      if (isContextMessageEntry(e)) contextEntryIds.push(e.id);
     }
   }
 
-  const messages = (piCtx.messages as AssistantMessage[]).map((msg) =>
-    normalizeAgentMessage(msg as never),
-  );
+  const contextMessages = (piCtx.messages as AssistantMessage[]).map((msg) => {
+    return normalizeAgentMessage(normalizeToolCalls(msg as AgentMessage));
+  });
+
+  const display = filterDisplayMessages(contextMessages, contextEntryIds);
 
   return {
-    messages,
-    entryIds,
+    messages: display.messages,
+    entryIds: display.entryIds,
     thinkingLevel: piCtx.thinkingLevel,
     model: piCtx.model,
   };
@@ -350,4 +353,23 @@ export function getLeafId(entries: SessionEntry[]): string | null {
   return entries[entries.length - 1].id;
 }
 
+function isContextMessageEntry(entry: SessionEntry): boolean {
+  return entry.type === "message" || entry.type === "custom_message" || (entry.type === "branch_summary" && !!entry.summary);
+}
 
+function filterDisplayMessages(messages: AgentMessage[], entryIds: string[]): Pick<SessionContext, "messages" | "entryIds"> {
+  const displayMessages: AgentMessage[] = [];
+  const displayEntryIds: string[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
+    displayMessages.push(msg);
+    displayEntryIds.push(entryIds[i] ?? "");
+  }
+
+  return {
+    messages: displayMessages,
+    entryIds: displayEntryIds,
+  };
+}

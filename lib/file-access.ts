@@ -1,12 +1,24 @@
 import fs from "node:fs";
+import { readdirSync } from "fs";
+import { homedir } from "os";
 import path from "path";
+import { getAgentDir, listAllSessions } from "./session-reader";
 
+// Short-TTL cache for the allowed-roots set. Without this, every file list/read
+// request re-scans every pi session on disk just to check access. 5s is short
+// enough that newly-created cwds appear promptly; stored on globalThis so it
+// survives Next.js hot-reload.
+declare global {
+  var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
+  var __piAdditionalAllowedRoots: Set<string> | undefined;
+}
+
+const ALLOWED_ROOTS_TTL_MS = 5_000;
 const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 
 export type ParsedByteRange =
   | { start: number; end: number }
   | { error: "invalid" | "unsatisfiable" };
-
 export function normalizeSlashes(filePath: string): string {
   return filePath.replace(/\\/g, "/");
 }
@@ -25,6 +37,52 @@ export function filePathFromSegments(segments: string[]): string {
 /** Read a single file path only when it stays inside the allowed roots. */
 export function canReadFilePath(target: string, allowedRoots: Set<string>): boolean {
   return isPathAllowed(target, allowedRoots) && isRealPathAllowed(target, allowedRoots);
+}
+
+function getAdditionalAllowedRoots(): Set<string> {
+  if (!globalThis.__piAdditionalAllowedRoots) {
+    globalThis.__piAdditionalAllowedRoots = new Set();
+  }
+  return globalThis.__piAdditionalAllowedRoots;
+}
+
+export function allowFileRoot(root: string): void {
+  if (!root) return;
+  const normalizedRoot = normalizeSlashes(root);
+  getAdditionalAllowedRoots().add(normalizedRoot);
+  globalThis.__piAllowedRootsCache?.roots.add(normalizedRoot);
+}
+
+export async function getAllowedFileRoots(): Promise<Set<string>> {
+  const now = Date.now();
+  const cached = globalThis.__piAllowedRootsCache;
+  if (cached && cached.expiresAt > now) return cached.roots;
+
+  const sessions = await listAllSessions(getAgentDir());
+  const roots = new Set<string>();
+  for (const s of sessions) {
+    if (s.cwd) roots.add(normalizeSlashes(s.cwd));
+  }
+
+  // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint.
+  try {
+    for (const name of readdirSync(homedir())) {
+      if (/^pi-cwd-\d{8}$/.test(name)) {
+        roots.add(normalizeSlashes(path.join(homedir(), name)));
+      }
+    }
+  } catch {
+    // ignore if home is unreadable
+  }
+
+  for (const root of getAdditionalAllowedRoots()) roots.add(root);
+
+  globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
+  return roots;
+}
+
+export function isFilePathAllowed(target: string, allowedRoots: Set<string>): boolean {
+  return isPathAllowed(target, allowedRoots);
 }
 
 export function isPathAllowed(target: string, allowedRoots: Set<string>): boolean {
