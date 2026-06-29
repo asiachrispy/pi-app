@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { execSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   GLOBAL_AUTH_ROUTES,
@@ -20,7 +21,6 @@ function readRouteSource(apiPath: string): string {
 
 describe("route coverage manifest", () => {
   it("covers every on-disk API route", () => {
-    const { execSync } = require("node:child_process");
     const disk = execSync('find app/api -name route.ts | sed "s|app/api/||;s|/route.ts||"', { encoding: "utf8" })
       .trim()
       .split("\n")
