@@ -573,11 +573,6 @@ export const zhCN = {
     activityActive: "进行中",
     activityLoading: "活动数据加载中…",
     activityEmpty: "该时段无会话记录。",
-    hiddenProjects: "已隐藏的项目",
-    hiddenProjectsDescription: "从项目下拉中移除的目录。Session 文件保留在本地，可随时恢复。",
-    hiddenProjectsEmpty: "没有已隐藏的项目。",
-    restoreProject: "恢复",
-    restoreProjectTitle: "重新加入项目下拉",
   },
   tools: {
     capability: {
