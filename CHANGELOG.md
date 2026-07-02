@@ -2,8 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.16] - 2026-07-02
+
+**Bundle:** `0.8.16p0.80.3` (pi-app + `@livos/pi-coding-agent`)
+
 ### Added
-- **上游 pi-web 同步（upstream/main 5e21e16）**：合入 extension UI 请求/状态/Widget 通道、session stats 面板、markdown 渲染增强、`README.zh-CN.md` 与相关依赖更新；保留本地 Livo、多租户、桌面 bundle 与 `@livos` alias 部署路径。
+- **上游 pi-web 同步（upstream/main v0.7.4）**：合入 `runningSessionIds` SSE、`useIsMobile` 移动端抽屉、draft 持久化、`PluginsConfig` 等；保留 Livo/i18n/terminal/workbench 能力。
 - **Livo M4 预算 + usage 回调**（#12c / M4）：`lib/livo/check-budget.ts`、`lib/livo/usage-callback.ts`；global-config-guard 用 `resolveLivoPrincipal`。
 - **Livo M3 token usage ledger**（#12b）：`lib/livo/record-usage.ts` + `token-usage.jsonl`；`buildTenantTokenUsage` 与 ledger 去重合并。
 - **Livo M2 internal verify + SSO 单层**（#10 / #11b）：`/api/internal/session/exists`、`hasValidLivoSessionWithStore`、`PI_INTERNAL_VERIFY_TOKEN`。
@@ -14,6 +18,7 @@
 - **Livo workspace 直达解析 API**：新增 `/api/livo/workspace/resolve`，把 `/app/?workspace=livo:{userId}&meeting={meetingId}` 解析为当前 Livo SSO 用户的工作区 cwd，并拒绝跨用户 workspace。
 
 ### Changed
+- **pi 引擎升级**：DMG / npm 包 pin 到 `@livos/pi-*@0.80.3`（合并 upstream pi v0.80.3 + fork Agnes provider）。
 - **Livo 用户数据隔离**：`/api/sessions`、`/api/sessions/[id]` 与 `/api/default-cwd` 根据当前 Livo userId 过滤或生成 workspace；server-to-server `PI_WEB_REMOTE_TOKEN` 继续保留给 Livo 后端派发任务。
 
 ### Fixed
