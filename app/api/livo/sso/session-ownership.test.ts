@@ -79,6 +79,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 vi.mock("@/lib/rpc-manager", () => ({
   getRpcSession: () => null,
   startRpcSession: vi.fn(),
+  getRunningRpcSessionIds: () => [],
 }));
 
 vi.mock("@/lib/scene-metadata", () => ({

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listAllSessions, listProjectCwdsForPicker } from "@/lib/session-reader";
+import { getRunningRpcSessionIds } from "@/lib/rpc-manager";
 import { isAuthError, requireApiAuth } from "@/lib/api-auth";
 import { filterLivoOwnedCwdsForRequest, filterLivoOwnedResourcesForRequest } from "@/lib/livo-sso";
 import { currentAgentDir } from "@/lib/livo/tenant-gate";
@@ -18,6 +19,7 @@ export const GET = withTenant(async (req: Request) => {
     return NextResponse.json({
       sessions: filterLivoOwnedResourcesForRequest(req, sessions),
       projectCwds: filterLivoOwnedCwdsForRequest(req, projectCwds),
+      runningSessionIds: getRunningRpcSessionIds(),
     });
   } catch (error) {
     return NextResponse.json(

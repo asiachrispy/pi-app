@@ -8,6 +8,7 @@ import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
+import { PluginsConfig } from "./PluginsConfig";
 import { BranchNavigator } from "./BranchNavigator";
 import { WorkbenchHome } from "./WorkbenchHome";
 import { TerminalPanel } from "./TerminalPanel";
@@ -16,6 +17,7 @@ import { RemotePairingHandler } from "./RemotePairingHandler";
 import { RemoteAccessBanner } from "./RemoteAccessBanner";
 import { ServerConnectionBanner } from "./ServerConnectionBanner";
 import { useTheme } from "@/hooks/useTheme";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useTerminalPanel } from "@/hooks/useTerminalPanel";
 import { useI18n } from "@/lib/i18n/provider";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
@@ -77,6 +79,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
   const searchParams = useSearchParams();
   const { isDark, toggleTheme } = useTheme();
   const { t: i18nT } = useI18n();
+  const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // Mirror selectedSession into a ref so handleCwdChange can see the
   // latest value without depending on it (re-creating the callback would
@@ -91,7 +94,9 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
   const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
+  const [pluginsConfigOpen, setPluginsConfigOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const terminal = useTerminalPanel();
   const terminalCwd = useMemo(() => selectedSession?.cwd ?? null, [selectedSession]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
@@ -156,12 +161,19 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const toggleTopPanel = useCallback((panel: "branches" | "system" | "session") => {
+    if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
-  }, []);
+  }, [isMobile]);
 
   const openSessionStatsPanel = useCallback(() => {
+    if (isMobile) setSidebarOpen(false);
     setActiveTopPanel("session");
-  }, []);
+  }, [isMobile]);
+
+  const handleSidebarToggle = useCallback(() => {
+    if (isMobile) setActiveTopPanel(null);
+    setSidebarOpen((open) => !open);
+  }, [isMobile]);
 
   useEffect(() => {
     if (!activeTopPanel || !topBarRef.current) return;
@@ -174,6 +186,14 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     ro.observe(topBarRef.current);
     return () => ro.disconnect();
   }, [activeTopPanel]);
+
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+
+  useEffect(() => {
+    setMobileSidebarReady(true);
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -534,7 +554,8 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     });
     setActiveFileTabId(tabId);
     setRightPanelOpen(true);
-  }, [activeCwd, newSessionCwd, selectedSession?.cwd]);
+    if (isMobile) setSidebarOpen(false);
+  }, [activeCwd, isMobile, newSessionCwd, selectedSession?.cwd]);
 
   const handleCloseFileTab = useCallback((tabId: string) => {
     setFileTabs((prev) => {
@@ -646,7 +667,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 88%, var(--bg-elevated)) 100%)" }}>
       {/* Mobile overlay backdrop */}
       <div
-        className="sidebar-overlay-backdrop"
+        className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
         onClick={() => setSidebarOpen(false)}
         style={{
           position: "fixed",
@@ -661,7 +682,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
 
       {/* Left sidebar */}
       <div
-        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${resizingPanel === "left" ? " is-resizing" : ""}`}
+        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${resizingPanel === "left" ? " is-resizing" : ""}`}
         style={{
           "--sidebar-width": `${sidebarWidth}px`,
           background: "var(--bg-panel)",
@@ -699,8 +720,9 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
         {/* Top bar with sidebar toggle */}
         <div ref={topBarRef} style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border-strong)", height: 38, background: topBarBackground }}>
           <button
-            onClick={() => setSidebarOpen((v) => !v)}
+            onClick={handleSidebarToggle}
             title={sidebarOpen ? i18nT("appShell.hideSidebar") : i18nT("appShell.showSidebar")}
+            aria-label={sidebarOpen ? i18nT("appShell.hideSidebar") : i18nT("appShell.showSidebar")}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               width: 38, height: 38, padding: 0,
@@ -1212,6 +1234,14 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     )}
     {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
       <SkillsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSkillsConfigOpen(false)} />
+    )}
+    {pluginsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
+      <PluginsConfig
+        cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!}
+        sessionId={selectedSession?.id ?? null}
+        onClose={() => setPluginsConfigOpen(false)}
+        onReloaded={() => setSessionKey((k) => k + 1)}
+      />
     )}
     </>
   );

@@ -8,6 +8,8 @@ Web UI for the Pi AI coding agent.
 - 🔧 **Already using pi CLI?** → [Integration](#already-a-pi-cli-user)
 - 💻 **Want to contribute?** → [Development](#development)
 
+![Pi Web shows the same pi session with structured Markdown, tool calls, and project navigation beside the CLI](https://raw.githubusercontent.com/agegr/pi-web/main/docs/screenshot2.png)
+
 ## What is pi-app?
 
 Pi ecosystem has three components:

@@ -27,10 +27,37 @@ type PendingUiResponse = {
   cancel: () => void;
 };
 
+type CustomUiComponent = {
+  render: (width: number) => string[];
+  handleInput?: (data: string) => void;
+  dispose?: () => void;
+  invalidate?: () => void;
+};
+
+type ActiveCustomUi = {
+  component: CustomUiComponent;
+  width: number;
+  resolve: (value: unknown) => void;
+  settled: boolean;
+};
+
 type ExtensionUiRequestBody = Record<string, unknown> & {
   method: ExtensionUiRequest["method"];
   timeout?: number;
   expiresAt?: number;
+};
+
+type ExtensionCommandContextActionsLike = {
+  waitForIdle: () => Promise<void>;
+  newSession: () => Promise<{ cancelled: boolean }>;
+  fork: () => Promise<{ cancelled: boolean }>;
+  navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
+  switchSession: () => Promise<{ cancelled: boolean }>;
+  reload: () => Promise<void>;
+};
+
+type ExtensionBindingOptions = {
+  forceEmptySystemPrompt?: boolean;
 };
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -56,17 +83,21 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
 export class AgentSessionWrapper {
   private listeners: EventListener[] = [];
   private pendingUiResponses = new Map<string, PendingUiResponse>();
+  private pendingUiRequests = new Map<string, AgentEvent>();
+  private activeCustomUis = new Map<string, ActiveCustomUi>();
   private extensionStatuses = new Map<string, string>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private promptRunning = false;
+  private extensionsBound = false;
+  private extensionBindingPromise: Promise<void> | null = null;
+  private extensionBindingError: unknown = null;
+  private forceEmptySystemPrompt = false;
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private _alive = true;
 
-  constructor(public readonly inner: AgentSessionLike) {
-    this.inner.extensionRunner?.setUIContext?.(this.createExtensionUiContext(), "rpc");
-  }
+  constructor(public readonly inner: AgentSessionLike) {}
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -78,6 +109,10 @@ export class AgentSessionWrapper {
 
   isAlive(): boolean {
     return this._alive;
+  }
+
+  isRunning(): boolean {
+    return this._alive && (this.promptRunning || this.inner.isStreaming || this.inner.isCompacting);
   }
 
   start(): void {
@@ -97,8 +132,106 @@ export class AgentSessionWrapper {
           notifyAgentEnd({ sessionId: this.sessionId }).catch(() => {}),
         );
       }
+      // Streaming / compaction / tool events flow through here; re-broadcast
+      // the running-status snapshot so the sidebar can update live.
+      notifyRunningChange();
     });
     this.resetIdleTimer();
+    notifyRunningChange();
+  }
+
+  setForceEmptySystemPrompt(force: boolean): void {
+    this.forceEmptySystemPrompt = force;
+    this.applyForcedEmptySystemPrompt();
+  }
+
+  beginExtensionBinding(options: ExtensionBindingOptions = {}): void {
+    void this.ensureExtensionsBound(options).catch((err) => {
+      console.error("[pi-web] failed to dispatch session_start to extensions:", err instanceof Error ? err.message : err);
+    });
+  }
+
+  private ensureExtensionsBound(options: ExtensionBindingOptions = {}): Promise<void> {
+    if (options.forceEmptySystemPrompt) this.forceEmptySystemPrompt = true;
+    if (this.extensionsBound) {
+      this.applyForcedEmptySystemPrompt();
+      return Promise.resolve();
+    }
+    if (this.extensionBindingPromise) return this.extensionBindingPromise;
+
+    this.extensionBindingError = null;
+    this.extensionBindingPromise = (async () => {
+      if (!this._alive) return;
+      const uiContext = this.createExtensionUiContext();
+      if (typeof this.inner.bindExtensions === "function") {
+        const bindExtensions = this.inner.bindExtensions as (bindings: {
+          uiContext?: ExtensionUiContextLike;
+          mode?: "rpc";
+          commandContextActions?: ExtensionCommandContextActionsLike;
+          shutdownHandler?: () => void;
+          onError?: (error: { extensionPath: string; event: string; error: string }) => void;
+        }) => Promise<void>;
+        await bindExtensions.call(this.inner, {
+          uiContext,
+          mode: "rpc",
+          commandContextActions: this.createExtensionCommandContextActions(),
+          shutdownHandler: () => this.emit({
+            type: "extension_ui_request",
+            id: randomUUID(),
+            method: "notify",
+            notifyType: "warning",
+            message: "Extension requested shutdown, but shutdown is not supported in pi-web.",
+          } as ExtensionUiRequest as AgentEvent),
+          onError: (error) => this.emit({
+            type: "extension_error",
+            extensionPath: error.extensionPath,
+            event: error.event,
+            error: error.error,
+          }),
+        });
+      } else {
+        this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
+      }
+      this.extensionsBound = true;
+      this.applyForcedEmptySystemPrompt();
+      console.log(`[pi-web] session_start dispatched to extensions for session ${this.inner.sessionId}`);
+    })().catch((err) => {
+      this.extensionBindingError = err;
+      throw err;
+    });
+
+    return this.extensionBindingPromise;
+  }
+
+  private async waitForExtensionsBound(): Promise<void> {
+    try {
+      if (this.extensionBindingPromise) await this.extensionBindingPromise;
+    } catch (err) {
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+    if (this.extensionBindingError) {
+      throw this.extensionBindingError instanceof Error
+        ? this.extensionBindingError
+        : new Error(String(this.extensionBindingError));
+    }
+  }
+
+  private shouldWaitForExtensions(type: string): boolean {
+    return type === "prompt" || type === "steer" || type === "follow_up" || type === "get_commands";
+  }
+
+  private async withFinalRunningNotification<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } finally {
+      notifyRunningChange();
+    }
+  }
+
+  private applyForcedEmptySystemPrompt(): void {
+    if (this.forceEmptySystemPrompt && this.inner.agent.state) {
+      this.inner.agent.state.systemPrompt = "";
+    }
   }
 
   private emit(event: AgentEvent): void {
@@ -112,6 +245,7 @@ export class AgentSessionWrapper {
 
   onEvent(listener: EventListener): () => void {
     this.listeners.push(listener);
+    for (const event of this.pendingUiRequests.values()) listener(event);
     return () => {
       const i = this.listeners.indexOf(listener);
       if (i !== -1) this.listeners.splice(i, 1);
@@ -126,6 +260,7 @@ export class AgentSessionWrapper {
     if (!this._alive) throw new Error("Session is closed");
     this.resetIdleTimer();
     const type = command.type as string;
+    if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
 
     switch (type) {
       case "prompt": {
@@ -142,10 +277,11 @@ export class AgentSessionWrapper {
               source: "rpc" as const,
             }
           : undefined;
-        this.promptRunning = true;
+        notifyRunningChange();
         this.inner.prompt(command.message as string, promptOptions).then(() => {
           this.promptRunning = false;
           if (!streamingBehavior) this.emit({ type: "prompt_done" });
+          notifyRunningChange();
         }).catch((error) => {
           this.promptRunning = false;
           this.emit({
@@ -153,12 +289,13 @@ export class AgentSessionWrapper {
             errorMessage: error instanceof Error ? error.message : String(error),
           });
           if (!streamingBehavior) this.emit({ type: "prompt_done" });
+          notifyRunningChange();
         });
         return null;
       }
 
       case "abort":
-        await this.inner.abort();
+        await this.withFinalRunningNotification(() => this.inner.abort());
         return null;
 
       case "get_state": {
@@ -280,7 +417,9 @@ export class AgentSessionWrapper {
         if (historyEnd <= boundaryStart) {
           throw new Error("Conversation too short to compact");
         }
-        const result = await this.inner.compact(command.customInstructions as string | undefined);
+        const result = await this.withFinalRunningNotification(() =>
+          this.inner.compact(command.customInstructions as string | undefined)
+        );
         return result;
       }
 
@@ -359,8 +498,23 @@ export class AgentSessionWrapper {
       }
 
       case "set_tools": {
-        this.inner.setActiveToolsByName(withExtensionTools(this.inner, command.toolNames as string[]));
+        const toolNames = command.toolNames as string[];
+        this.setForceEmptySystemPrompt(toolNames.length === 0);
+        this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
+        this.applyForcedEmptySystemPrompt();
         return null;
+      }
+
+      case "reload": {
+        await this.waitForExtensionsBound();
+        this.extensionStatuses.clear();
+        this.extensionWidgets.clear();
+        await this.inner.reload();
+        if (typeof this.inner.bindExtensions !== "function") {
+          this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+        }
+        this.applyForcedEmptySystemPrompt();
+        return { success: true };
       }
 
       case "abort_compaction": {
@@ -381,6 +535,16 @@ export class AgentSessionWrapper {
         return { path, filename: path.split("/").pop() ?? "session.html" };
       }
 
+      case "extension_ui_input": {
+        this.handleExtensionUiInput(command.id as string, command.data as string);
+        return null;
+      }
+
+      case "set_auto_retry": {
+        this.inner.setAutoRetryEnabled(command.enabled as boolean);
+        return null;
+      }
+
       default:
         throw new Error(`Unsupported command: ${type}`);
     }
@@ -392,8 +556,11 @@ export class AgentSessionWrapper {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.unsubscribe?.();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
+    for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
+    this.pendingUiRequests.clear();
     this.onDestroyCallback?.();
+    notifyRunningChange();
   }
 
   private resolveExtensionUiResponse(response: ExtensionUiResponse): void {
@@ -408,6 +575,118 @@ export class AgentSessionWrapper {
 
   private getExtensionWidgets(): ExtensionWidgetItem[] {
     return Array.from(this.extensionWidgets.values());
+  }
+
+  private getCustomUiWidth(options: unknown): number {
+    if (!options || typeof options !== "object") return 92;
+    const overlayOptions = (options as { overlayOptions?: unknown }).overlayOptions;
+    const resolved = typeof overlayOptions === "function" ? overlayOptions() : overlayOptions;
+    if (!resolved || typeof resolved !== "object") return 92;
+    const width = (resolved as { width?: unknown }).width;
+    return typeof width === "number" && Number.isFinite(width)
+      ? Math.max(40, Math.min(140, Math.round(width)))
+      : 92;
+  }
+
+  private emitCustomUiRender(id: string, custom: ActiveCustomUi): void {
+    let lines: string[];
+    try {
+      lines = custom.component.render(custom.width);
+    } catch (error) {
+      lines = [`Extension custom UI render failed: ${error instanceof Error ? error.message : String(error)}`];
+    }
+    const event = {
+      type: "extension_ui_request",
+      id,
+      method: "custom",
+      lines,
+    } as ExtensionUiRequest as AgentEvent;
+    this.pendingUiRequests.set(id, event);
+    this.emit(event);
+  }
+
+  private closeCustomUi(id: string, value: unknown): void {
+    const custom = this.activeCustomUis.get(id);
+    if (!custom || custom.settled) return;
+    custom.settled = true;
+    this.activeCustomUis.delete(id);
+    this.pendingUiRequests.delete(id);
+    try {
+      custom.component.dispose?.();
+    } catch {
+      // Ignore dispose errors from extension UI components.
+    }
+    this.emit({
+      type: "extension_ui_request",
+      id,
+      method: "custom",
+      lines: [],
+      closed: true,
+    } as ExtensionUiRequest as AgentEvent);
+    custom.resolve(value);
+  }
+
+  private handleExtensionUiInput(id: string, data: string): void {
+    const custom = this.activeCustomUis.get(id);
+    if (!custom || typeof data !== "string") return;
+    try {
+      custom.component.handleInput?.(data);
+      if (this.activeCustomUis.has(id)) this.emitCustomUiRender(id, custom);
+    } catch (error) {
+      this.closeCustomUi(id, undefined);
+      this.emit({
+        type: "extension_error",
+        extensionPath: `custom-ui:${id}`,
+        event: "custom_ui_input",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private requestExtensionCustomUi<T>(
+    factory: unknown,
+    options?: unknown,
+  ): Promise<T> {
+    if (typeof factory !== "function") return Promise.resolve(undefined as T);
+
+    const id = randomUUID();
+    const width = this.getCustomUiWidth(options);
+
+    return new Promise<T>((resolve) => {
+      const tui = {
+        requestRender: () => {
+          const custom = this.activeCustomUis.get(id);
+          if (custom) this.emitCustomUiRender(id, custom);
+        },
+      };
+      const done = (value: T) => this.closeCustomUi(id, value);
+
+      Promise.resolve()
+        .then(() => factory(tui, undefined, undefined, done))
+        .then((component) => {
+          if (!component || typeof component !== "object" || typeof (component as CustomUiComponent).render !== "function") {
+            resolve(undefined as T);
+            return;
+          }
+          const custom: ActiveCustomUi = {
+            component: component as CustomUiComponent,
+            width,
+            resolve: (value) => resolve(value as T),
+            settled: false,
+          };
+          this.activeCustomUis.set(id, custom);
+          this.emitCustomUiRender(id, custom);
+        })
+        .catch((error) => {
+          this.emit({
+            type: "extension_error",
+            extensionPath: `custom-ui:${id}`,
+            event: "custom_ui",
+            error: error instanceof Error ? error.message : String(error),
+          });
+          resolve(undefined as T);
+        });
+    });
   }
 
   private requestExtensionUi<T>(
@@ -432,6 +711,7 @@ export class AgentSessionWrapper {
       const cleanup = () => {
         if (timeoutId) clearTimeout(timeoutId);
         signal?.removeEventListener("abort", onAbort);
+        this.pendingUiRequests.delete(id);
         this.pendingUiResponses.delete(id);
       };
       const settle = (value: T) => {
@@ -443,6 +723,7 @@ export class AgentSessionWrapper {
       if (timeout) timeoutId = setTimeout(() => settle(defaultValue), timeout);
       signal?.addEventListener("abort", onAbort, { once: true });
 
+      this.pendingUiRequests.set(id, fullRequest as AgentEvent);
       this.pendingUiResponses.set(id, {
         resolve: (response) => settle(parseResponse(response)),
         cancel: () => settle(defaultValue),
@@ -536,7 +817,7 @@ export class AgentSessionWrapper {
           title,
         } as ExtensionUiRequest as AgentEvent);
       },
-      custom: async <T = unknown>() => undefined as T,
+      custom: <T = unknown>(factory: unknown, options?: unknown) => this.requestExtensionCustomUi<T>(factory, options),
       pasteToEditor: (text) => {
         this.emit({
           type: "extension_ui_request",
@@ -565,6 +846,32 @@ export class AgentSessionWrapper {
       setToolsExpanded: () => {},
     };
   }
+
+  private createExtensionCommandContextActions(): ExtensionCommandContextActionsLike {
+    return {
+      waitForIdle: async () => {
+        const agent = this.inner.agent as { waitForIdle?: () => Promise<void> };
+        await agent.waitForIdle?.();
+      },
+      newSession: async () => ({ cancelled: true }),
+      fork: async () => ({ cancelled: true }),
+      navigateTree: async (targetId, options) => {
+        const result = await this.inner.navigateTree(targetId, { summarize: options?.summarize });
+        return { cancelled: result.cancelled };
+      },
+      switchSession: async () => ({ cancelled: true }),
+      reload: async () => {
+        this.extensionStatuses.clear();
+        this.extensionWidgets.clear();
+        await this.inner.reload({
+          beforeSessionStart: () => {
+            this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+          },
+        });
+        this.applyForcedEmptySystemPrompt();
+      },
+    };
+  }
 }
 
 // ============================================================================
@@ -580,6 +887,7 @@ export class AgentSessionWrapper {
 declare global {
   var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
+  var __piRunningListeners: Set<(ids: string[]) => void> | undefined;
 }
 
 function getRegistry(): Map<string, AgentSessionWrapper> {
@@ -607,6 +915,51 @@ export function destroyAllRpcSessions(): void {
   getRegistry().forEach((session) => session.destroy());
   getRegistry().clear();
   getLocks().clear();
+}
+
+export function getRunningRpcSessionIds(): string[] {
+  const ids = new Set<string>();
+  for (const [sessionId, session] of getRegistry()) {
+    if (session.isRunning()) ids.add(session.sessionId || sessionId);
+  }
+  return [...ids];
+}
+
+// ----------------------------------------------------------------------------
+// Running-status broadcaster
+//
+// Pushes the current set of running session ids to subscribers whenever any
+// session's running state may have changed. This lets the sidebar receive live
+// updates over SSE instead of polling. Listeners live on globalThis so they
+// survive Next.js hot-reload.
+// ----------------------------------------------------------------------------
+
+function getRunningListeners(): Set<(ids: string[]) => void> {
+  if (!globalThis.__piRunningListeners) globalThis.__piRunningListeners = new Set();
+  return globalThis.__piRunningListeners;
+}
+
+/** Subscribe to running-session-id changes. Returns an unsubscribe function. */
+export function subscribeRunningSessions(listener: (ids: string[]) => void): () => void {
+  const listeners = getRunningListeners();
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+let lastRunningSnapshot = "";
+
+/**
+ * Recompute the running-session-id set and, if it changed since the last
+ * notification, broadcast it to subscribers. Cheap to call often.
+ */
+export function notifyRunningChange(): void {
+  const ids = getRunningRpcSessionIds();
+  const snapshot = JSON.stringify([...ids].sort());
+  if (snapshot === lastRunningSnapshot) return;
+  lastRunningSnapshot = snapshot;
+  for (const listener of getRunningListeners()) {
+    try { listener(ids); } catch { /* ignore listener errors */ }
+  }
 }
 
 /**
@@ -667,17 +1020,16 @@ export async function startRpcSession(
       inner.setActiveToolsByName(withExtensionTools(inner, toolNames));
     }
 
+    const wrapper = new AgentSessionWrapper(inner);
     // When all tools are disabled, clear the system prompt entirely.
     // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
-    // the only way to truly clear it is to call agent.setSystemPrompt directly.
+    // keep this forced after extension resource discovery and reloads as well.
     if (toolNames?.length === 0) {
-      inner.agent.state.systemPrompt = "";
+      wrapper.setForceEmptySystemPrompt(true);
     }
-
     inner.setAutoCompactionEnabled(true);
     inner.setAutoRetryEnabled(true);
 
-    const wrapper = new AgentSessionWrapper(inner);
     wrapper.start();
 
     const realSessionId = inner.sessionId as string;
@@ -686,6 +1038,7 @@ export async function startRpcSession(
 
     wrapper.onDestroy(() => registry.delete(realSessionId));
     registry.set(realSessionId, wrapper);
+    wrapper.beginExtensionBinding({ forceEmptySystemPrompt: toolNames?.length === 0 });
 
     return { session: wrapper, realSessionId };
   })().finally(() => locks.delete(sessionId));
