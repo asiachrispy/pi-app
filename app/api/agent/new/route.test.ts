@@ -149,8 +149,6 @@ describe("POST /api/agent/new", () => {
     }));
 
     expect(res.status).toBe(200);
-    const call = send.mock.calls.find(([cmd]) => cmd?.type === "prompt");
-    expect(call).toBeDefined();
-    expect((call?.[0] as { message?: string }).message).toBe("hello");
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "prompt", message: "hello" }));
   });
 });
