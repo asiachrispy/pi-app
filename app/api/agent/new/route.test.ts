@@ -99,4 +99,58 @@ describe("POST /api/agent/new", () => {
     expect(res.status).toBe(200);
     expect(session.inner.appendSessionInfo).toHaveBeenCalledWith("fileId_1_跟进客户");
   });
+
+  it("returns 200 for type:'ensure_session' without forwarding the command to session.send", async () => {
+    // Regression: client uses type:"ensure_session" to claim a sessionId
+    // before sending the actual prompt in a follow-up POST /api/agent/[id].
+    // The route must NOT forward that placeholder type to session.send, or
+    // the real RPC manager throws "Unsupported command: ensure_session"
+    // → server returns 500 → client throws HTTP 500 → "页面闪一下"。
+    const { POST } = await import("./route");
+    const send = vi.fn(async (command: Record<string, unknown>) => {
+      // Mirror real RPC behavior: unknown types throw.
+      if (command.type === "ensure_session") {
+        throw new Error("Unsupported command: ensure_session");
+      }
+      return null;
+    });
+    rpc.startRpcSession.mockResolvedValueOnce({
+      realSessionId: "session-ensure",
+      session: { send, inner: { appendSessionInfo: vi.fn() } },
+    });
+
+    const res = await POST(postAgent({
+      cwd: "/tmp",
+      type: "ensure_session",
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { success: boolean; sessionId: string };
+    expect(body.success).toBe(true);
+    expect(body.sessionId).toBe("session-ensure");
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: "ensure_session" }));
+  });
+
+  it("forwards type:'prompt' (with type in payload) to session.send", async () => {
+    // Regression guard: ensure_session short-circuit must NOT strip `type`
+    // from the prompt payload. The RPC manager dispatches on `command.type`,
+    // so a prompt body without type hits the default branch and throws.
+    const { POST } = await import("./route");
+    const send = vi.fn(async () => null);
+    rpc.startRpcSession.mockResolvedValueOnce({
+      realSessionId: "session-prompt",
+      session: { send, inner: { appendSessionInfo: vi.fn() } },
+    });
+
+    const res = await POST(postAgent({
+      cwd: "/tmp",
+      type: "prompt",
+      message: "hello",
+    }));
+
+    expect(res.status).toBe(200);
+    const call = send.mock.calls.find(([cmd]) => cmd?.type === "prompt");
+    expect(call).toBeDefined();
+    expect((call?.[0] as { message?: string }).message).toBe("hello");
+  });
 });

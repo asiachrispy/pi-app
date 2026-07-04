@@ -85,6 +85,21 @@ async function createSessionAndDispatch(args: {
     await session.send({ type: "set_thinking_level", level: thinkingLevel });
   }
 
+  // "ensure_session" only creates the runtime so clients can query commands.
+  // Skip the dispatch step; the real prompt arrives via a follow-up POST /api/agent/[id].
+  // Without this short-circuit, session.send({type:"ensure_session"}) hits RPC's
+  // default branch and throws "Unsupported command: ensure_session" → 500.
+  if (command.type === "ensure_session") {
+    await notifyLivoPiStatus({
+      userId: livoUserId,
+      meetingId: livoMeetingId,
+      piSessionId: realSessionId,
+      status: "running",
+      items: livoTodoItems(livoTodos, "running"),
+    });
+    return { success: true, sessionId: realSessionId, data: null };
+  }
+
   let result: unknown;
   try {
     result = await session.send(promptCommand);

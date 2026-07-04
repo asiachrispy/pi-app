@@ -10,7 +10,7 @@ import type {
   SessionTreeNode,
 } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
-import { sendAgentCommand } from "@/lib/agent-client";
+import { sendAgentCommand, sendAgentNewCommand } from "@/lib/agent-client";
 import type { ToolEntry } from "@/components/ToolPanel";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 
@@ -438,20 +438,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (selectedModel) setPendingModel(selectedModel);
       const { PRESET_NONE, PRESET_DEFAULT, PRESET_FULL } = await import("@/components/ToolPanel");
       const toolNames = toolPreset === "none" ? PRESET_NONE : toolPreset === "default" ? PRESET_DEFAULT : PRESET_FULL;
-      const res = await fetch("/api/agent/new", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cwd: newSessionCwd,
-          type: "ensure_session",
-          toolNames,
-          ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
-          ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
-        }),
+      const { sessionId: realId } = await sendAgentNewCommand({
+        cwd: newSessionCwd,
+        type: "ensure_session",
+        toolNames,
+        ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
+        ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const result = await res.json() as { sessionId: string };
-      const realId = result.sessionId;
       sessionIdRef.current = realId;
       return realId;
     })();
@@ -840,20 +833,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (selectedModel) setPendingModel(selectedModel);
           const { PRESET_NONE, PRESET_DEFAULT, PRESET_FULL } = await import("@/components/ToolPanel");
           const toolNames = toolPreset === "none" ? PRESET_NONE : toolPreset === "default" ? PRESET_DEFAULT : PRESET_FULL;
-          const res = await fetch("/api/agent/new", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              cwd: newSessionCwd,
-              type: "ensure_session",
-              toolNames,
-              ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
-              ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
-            }),
+          const { sessionId: realId } = await sendAgentNewCommand({
+            cwd: newSessionCwd,
+            type: "ensure_session",
+            toolNames,
+            ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
+            ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
           });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const result = await res.json() as { sessionId: string };
-          const realId = result.sessionId;
           sessionIdRef.current = realId;
           sentSessionId = realId;
           await connectEvents(realId);
