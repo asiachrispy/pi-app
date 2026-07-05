@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.8.17] - 2026-07-04
+
+**Bundle:** `0.8.17p0.80.3` (pi-app + `@livos/pi-coding-agent`)
+
+### Fixed
+- **新建对话大模型无响应**：`POST /api/agent/new` 在 `type:"ensure_session"` 时错误地把 `type` 字段透传给 `session.send` → RPC 走 default 分支抛 `Unsupported command: ensure_session` → route 返回 500 → client `useAgentSession` 抛 `HTTP 500` → 「页面闪一下」。`createSessionAndDispatch` 在 ensure_session 分支短路（创建 runtime + 应用模型/thinking level，不调用 `session.send(promptCommand)`），与注释「only creates the runtime so clients can query commands」一致。Regression 测试 `route.test.ts` 覆盖 ensure_session 不被转发 + prompt 路径不被破坏两条边界。
+- **`/api/agent/new` 错误被吞**：`useAgentSession.ts` 之前对 4xx/5xx 直接 `throw new Error('HTTP ${res.status}')`，server 返回的 `{ error: "Error: Unsupported command: ensure_session" }` 等 body 完全被丢弃——DevTools Console 只看到 `HTTP 500`，无法定位。新增 `lib/agent-client.sendAgentNewCommand`（与 `sendAgentCommand` 同契约），throw 时优先带 server `body.error` 兜底 HTTP status；`useAgentSession` 两处 raw fetch（`ensureNewSession` + `handleSend`）改走 helper。`agent-client.test.ts` 覆盖成功路径、错误带 server body、缺 body 时回退到 HTTP status 三个分支。
+
 ## [0.8.16] - 2026-07-02
 
 **Bundle:** `0.8.16p0.80.3` (pi-app + `@livos/pi-coding-agent`)
