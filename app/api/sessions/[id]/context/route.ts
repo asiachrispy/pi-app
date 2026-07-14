@@ -16,6 +16,8 @@ export const GET = withTenant(async (
   const { id } = await params;
   const url = new URL(req.url);
   const leafId = url.searchParams.get("leafId") ?? undefined;
+  const deferThinking = url.searchParams.has("deferThinking");
+  const deferToolResultImages = url.searchParams.has("deferMedia");
 
   try {
     const filePath = await resolveSessionPath(id, currentAgentDir());
@@ -26,7 +28,10 @@ export const GET = withTenant(async (
     const sm = SessionManager.open(filePath);
     const rejectedByOwner = rejectLivoCwdOutsideWorkspace(req, sm.getHeader()?.cwd);
     if (rejectedByOwner) return rejectedByOwner;
-    const context = buildSessionContext(sm.getEntries() as never, leafId);
+    const context = buildSessionContext(sm.getEntries() as never, leafId, {
+      deferThinking,
+      deferToolResultImages,
+    });
 
     return NextResponse.json({ context });
   } catch (error) {

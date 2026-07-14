@@ -20,6 +20,9 @@ import { useTheme } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useTerminalPanel } from "@/hooks/useTerminalPanel";
 import { useI18n } from "@/lib/i18n/provider";
+import { copyText } from "@/lib/clipboard";
+import { getFileName } from "@/lib/file-paths";
+import { buildAtMentionText } from "@/lib/file-fuzzy";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import { SessionReportButton } from "./SessionReportButton";
 import type { ChatInputHandle } from "./ChatInput";
@@ -44,25 +47,6 @@ import {
 import type { SessionStatsInfo } from "@/lib/pi-types";
 
 type SessionCopyField = "file" | "id";
-
-function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text);
-  }
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-    return Promise.resolve();
-  } catch {
-    return Promise.reject();
-  }
-}
 
 // Above the sidebar (z 200) and the file-panel toggle (z 300): covers everything
 // while a drag is in progress so the file-preview iframe can't swallow pointer
@@ -224,8 +208,10 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     handlePanelResizeKeyDown,
   } = usePanelResize({ sidebarOpen, rightPanelOpen });
 
-  const handleAtMention = useCallback((relativePath: string) => {
-    chatInputRef.current?.insertText("`" + relativePath + "`");
+  // Same @mention format as the chat input's @ autocomplete, so the agent's
+  // read tool resolves it the same way (it strips the @ prefix).
+  const handleAtMention = useCallback((relativePath: string, isDir: boolean) => {
+    chatInputRef.current?.insertText(buildAtMentionText(relativePath, isDir));
   }, []);
 
   const [initialSessionId] = useState<string | null>(() => searchParams.get("session"));
@@ -309,7 +295,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     }
   }, [gitBranch, branchTree]);
 
-  const handleCwdChange = useCallback((cwd: string | null) => {
+  const handleCwdChange = useCallback((cwd: string | null, projectRoot?: string | null) => {
     setActiveCwd(cwd);
     // Skip if cwd is null (initial mount) or during the initial URL restore.
     if (!cwd) return;
@@ -317,12 +303,16 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
       suppressCwdBumpRef.current = false;
       return;
     }
-    // Close any session that belongs to a different cwd — it no longer
+    // Worktrees of one repo share a project root. Moving the effective cwd
+    // within the same project (e.g. switching worktree, or clicking a session
+    // that lives in another worktree) must not close the open session.
+    const newProject = projectRoot ?? cwd;
+    if (selectedSession && (selectedSession.projectRoot ?? selectedSession.cwd) === newProject) {
+      return;
+    }
+    // Close any session that belongs to a different project — it no longer
     // matches the selected project directory.
-    setSelectedSession((prev) => {
-      if (prev && prev.cwd !== cwd) return null;
-      return prev;
-    });
+    setSelectedSession(null);
     setNewSessionCwd((prev) => {
       if (prev && prev !== cwd) return null;
       return prev;
@@ -345,7 +335,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     setRefreshKey((k) => k + 1);
     resetChatChrome();
     router.replace(workbenchPath(pathname), { scroll: false });
-  }, [pathname, resetChatChrome, router]);
+  }, [pathname, resetChatChrome, router, selectedSession]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setNewSessionCwd(null);
@@ -419,6 +409,21 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     }
   }, [ensureWorkbenchCwd, i18nT, pathname, resetChatChrome, router]);
 
+  // Client-built transient SessionInfo (new session / fork) lacks the
+  // server-computed projectRoot, which the same-project check in
+  // handleCwdChange relies on. Hydrate it from the session list so switching
+  // worktrees right after creating a session doesn't close the chat.
+  const hydrateSelectedSession = useCallback((sessionId: string) => {
+    void fetch("/api/sessions")
+      .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
+      .then((d) => {
+        const full = d?.sessions.find((s) => s.id === sessionId);
+        if (!full) return;
+        setSelectedSession((prev) => (prev && prev.id === sessionId && !prev.projectRoot ? full : prev));
+      })
+      .catch(() => {});
+  }, []);
+
   // Called by ChatWindow when a new session gets its real id from pi
   const sessionRefreshTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const handleSessionCreated = useCallback((session: SessionInfo) => {
@@ -426,6 +431,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     setSelectedSession(session);
     setRefreshKey((k) => k + 1);
     router.replace(workbenchSessionPath(pathname, session.id), { scroll: false });
+    hydrateSelectedSession(session.id);
     // Re-trigger the sidebar refresh after the session file is fully
     // persisted. The first refresh may race the prompt write, leaving the
     // sidebar with messageCount=0 and a "(no messages)" placeholder title.
@@ -436,7 +442,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
       setRefreshKey((k) => k + 1);
     }, 600);
     sessionRefreshTimersRef.current.add(t);
-  }, [pathname, router]);
+  }, [pathname, router, hydrateSelectedSession]);
   useEffect(() => {
     const timers = sessionRefreshTimersRef.current;
     return () => {
@@ -540,7 +546,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     router.replace(workbenchSessionPath(pathname, item.sessionId), { scroll: false });
   }, [pathname, resetChatChrome, router]);
 
-  const handleOpenFile = useCallback((filePath: string, fileName: string) => {
+  const handleOpenFile = useCallback((filePath: string, fileName: string, sourceSessionId?: string | null) => {
     const baseCwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd ?? null;
     const resolvedFilePath = resolveFilePathForOpen(filePath, baseCwd);
     const kind = resolveFilePreviewKind(resolvedFilePath, fileName);
@@ -549,13 +555,19 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
     }
     const tabId = `file:${resolvedFilePath}`;
     setFileTabs((prev) => {
-      if (prev.find((t) => t.id === tabId)) return prev;
-      return [...prev, { id: tabId, label: fileName, filePath: resolvedFilePath }];
+      const existing = prev.find((t) => t.id === tabId);
+      if (!existing) return [...prev, { id: tabId, label: fileName, filePath: resolvedFilePath, sourceSessionId }];
+      if (!sourceSessionId || existing.sourceSessionId === sourceSessionId) return prev;
+      return prev.map((t) => t.id === tabId ? { ...t, sourceSessionId } : t);
     });
     setActiveFileTabId(tabId);
     setRightPanelOpen(true);
     if (isMobile) setSidebarOpen(false);
   }, [activeCwd, isMobile, newSessionCwd, selectedSession?.cwd]);
+
+  const handleOpenLinkedFile = useCallback((filePath: string) => {
+    handleOpenFile(filePath, getFileName(filePath), selectedSession?.id ?? null);
+  }, [handleOpenFile, selectedSession?.id]);
 
   const handleCloseFileTab = useCallback((tabId: string) => {
     setFileTabs((prev) => {
@@ -1095,6 +1107,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
               onSessionStatsChange={handleSessionStatsChange}
               onSessionStatsPanelOpen={openSessionStatsPanel}
               onContextUsageChange={handleContextUsageChange}
+              onOpenFile={handleOpenLinkedFile}
             />
           ) : showPlaceholder ? (
             workbenchView === "settings" ? (
@@ -1188,7 +1201,7 @@ export function AppShell({ initialDefaultCwd = null }: AppShellProps) {
                 filePath={activeFileTab.filePath}
                 displayLabel={activeFileTab.label}
                 cwd={activeCwd ?? undefined}
-                sessionId={selectedSession?.id}
+                sourceSessionId={activeFileTab.sourceSessionId}
               />
             ) : (
               <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>

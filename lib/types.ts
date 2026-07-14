@@ -38,6 +38,8 @@ export interface ImageContent {
 export interface ThinkingContent {
   type: "thinking";
   thinking: string;
+  /** Historical content omitted from the initial response and loaded on demand. */
+  deferred?: boolean;
 }
 
 export interface ToolCallContent {
@@ -293,6 +295,12 @@ export interface SessionInfo {
   productTitle?: string;
   productStatus?: "active" | "completed" | "draft";
   lastResultSummary?: string;
+  /** Main repo root shared by all worktrees of this cwd (cwd itself for non-git dirs).
+   *  Always set by the server; optional because the client builds transient
+   *  SessionInfo objects before the first refresh. Fall back to cwd. */
+  projectRoot?: string;
+  /** Branch name when cwd is a linked git worktree (not the main checkout) */
+  worktreeBranch?: string;
 }
 
 export interface SessionContext {
@@ -300,16 +308,4 @@ export interface SessionContext {
   entryIds: string[]; // parallel to messages — the session entry id for each message
   thinkingLevel: string;
   model: { provider: string; modelId: string } | null;
-}
-
-// RPC types
-export interface RpcSessionState {
-  model?: { provider: string; id: string; contextWindow?: number };
-  thinkingLevel: string;
-  isStreaming: boolean;
-  isCompacting: boolean;
-  sessionFile?: string;
-  sessionId: string;
-  sessionName?: string;
-  messageCount: number;
 }

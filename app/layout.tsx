@@ -34,15 +34,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={notoSansMono.variable} suppressHydrationWarning>
+    <html lang="en" translate="no" className={`${notoSansMono.variable} notranslate`} suppressHydrationWarning>
       <head>
+        <meta name="google" content="notranslate" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem("pi-theme");if(t==="dark")document.documentElement.classList.add("dark");var l=localStorage.getItem("pi-web.locale");if(l!=="en"&&l!=="zh-CN"){var n=(navigator.languages&&navigator.languages[0])||navigator.language||"en";l=/^zh/i.test(n)?"zh-CN":"en";}document.documentElement.lang=l;}catch(e){}})();`,
           }}
         />
       </head>
-      <body style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
+      <body translate="no" className="notranslate" style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

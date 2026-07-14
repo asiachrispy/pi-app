@@ -2,7 +2,9 @@ import fs from "node:fs";
 import { readdirSync } from "fs";
 import { homedir } from "os";
 import path from "path";
+import { getAdditionalAllowedRoots, normalizeSlashes } from "./allowed-roots";
 import { getAgentDir, listAllSessions } from "./session-reader";
+export { allowFileRoot, normalizeSlashes } from "./allowed-roots";
 
 // Short-TTL cache for the allowed-roots set. Without this, every file list/read
 // request re-scans every pi session on disk just to check access. 5s is short
@@ -10,7 +12,6 @@ import { getAgentDir, listAllSessions } from "./session-reader";
 // survives Next.js hot-reload.
 declare global {
   var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
-  var __piAdditionalAllowedRoots: Set<string> | undefined;
 }
 
 const ALLOWED_ROOTS_TTL_MS = 5_000;
@@ -19,9 +20,6 @@ const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
 export type ParsedByteRange =
   | { start: number; end: number }
   | { error: "invalid" | "unsatisfiable" };
-export function normalizeSlashes(filePath: string): string {
-  return filePath.replace(/\\/g, "/");
-}
 
 export function isWindowsAbsolutePath(filePath: string): boolean {
   return WINDOWS_ABSOLUTE_RE.test(filePath) || filePath.startsWith("\\\\") || filePath.startsWith("//");
@@ -39,20 +37,6 @@ export function canReadFilePath(target: string, allowedRoots: Set<string>): bool
   return isPathAllowed(target, allowedRoots) && isRealPathAllowed(target, allowedRoots);
 }
 
-function getAdditionalAllowedRoots(): Set<string> {
-  if (!globalThis.__piAdditionalAllowedRoots) {
-    globalThis.__piAdditionalAllowedRoots = new Set();
-  }
-  return globalThis.__piAdditionalAllowedRoots;
-}
-
-export function allowFileRoot(root: string): void {
-  if (!root) return;
-  const normalizedRoot = normalizeSlashes(root);
-  getAdditionalAllowedRoots().add(normalizedRoot);
-  globalThis.__piAllowedRootsCache?.roots.add(normalizedRoot);
-}
-
 export async function getAllowedFileRoots(): Promise<Set<string>> {
   const now = Date.now();
   const cached = globalThis.__piAllowedRootsCache;
@@ -62,6 +46,9 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
   const roots = new Set<string>();
   for (const s of sessions) {
     if (s.cwd) roots.add(normalizeSlashes(s.cwd));
+    // The project root (main repo shared by all worktrees) is browsable too —
+    // the project dropdown lists it even when only worktrees have sessions.
+    if (s.projectRoot) roots.add(normalizeSlashes(s.projectRoot));
   }
 
   // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint.

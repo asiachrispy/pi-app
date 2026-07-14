@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PRESET_DEFAULT, PRESET_FULL } from "@/components/ToolPanel";
-import { toolModeToPreset, toolModeToToolNames } from "./tool-presets";
+import { PRESET_DEFAULT, PRESET_FULL, toolModeToPreset, toolModeToToolNames } from "./tool-presets";
 
 describe("tool-presets", () => {
   it("maps simple mode to default preset tools", () => {

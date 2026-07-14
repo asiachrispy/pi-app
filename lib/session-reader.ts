@@ -1,16 +1,18 @@
-import { isAbsolute, join, resolve } from "node:path";
+import { closeSync, openSync, readSync } from "fs";
+import { isAbsolute, join, normalize as normalizePath, resolve } from "node:path";
 import { SessionManager, buildSessionContext as piBuildSessionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@/lib/agent-dir";
 import { resolveLivoWorkspaceRoot } from "@/lib/livo/config";
 import { TENANT_AGENT_DIR_NAME } from "@/lib/livo/tenant-context";
-import type { AgentMessage, SessionEntry, SessionInfo, SessionContext, SessionTreeNode, AssistantMessage } from "./types";
+import type { AgentMessage, SessionEntry, SessionHeader, SessionInfo, SessionContext, SessionTreeNode } from "./types";
 import type { SessionMessageEntry } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { extractFileRefsFromText } from "./message-file-refs";
-import { normalizeAgentMessage, normalizeToolCalls } from "./normalize";
+import { normalizeToolCalls } from "./normalize";
 import { loadPiWebPreferences } from "./pi-web-preferences";
 import { readProductSessionMetadataMap } from "./scene-metadata";
 import { getPickerCwds, isSystemTempCwd } from "./session-projects";
+import { resolveProject, type ProjectInfo } from "./worktree";
 
 export { getAgentDir };
 
@@ -80,17 +82,25 @@ export async function listProjectCwdsForPicker(agentDir: string): Promise<string
 }
 
 /** 列出某 agentDir 下所有 session 的展示信息（方案二：agentDir 必传）。 */
-export async function listAllSessions(agentDir: string): Promise<SessionInfo[]> {
+async function loadAllSessions(agentDir: string): Promise<SessionInfo[]> {
   const piSessions: PiSessionInfo[] = await listPiSessions(agentDir);
   const pathToId = new Map<string, string>();
-  for (const s of piSessions) pathToId.set(s.path, s.id);
+  for (const s of piSessions) pathToId.set(normalizePath(s.path), s.id);
   const productMetadata = readProductSessionMetadataMap();
 
-  const cache = getPathCache();
+  // Resolve each unique cwd to its project root (main repo shared by all
+  // worktrees). resolveProject caches per-cwd, so this is cheap after warmup.
+  const uniqueCwds = [...new Set(piSessions.map((s) => s.cwd).filter(Boolean))];
+  const projectByCwd = new Map<string, ProjectInfo>();
+  await Promise.all(uniqueCwds.map(async (cwd) => {
+    projectByCwd.set(cwd, await resolveProject(cwd));
+  }));
+
   return piSessions.map((s) => {
     const metadata = productMetadata[s.id];
     // Populate path cache (按 agentDir 前缀隔离) so resolveSessionPath works without a full scan
-    cache.set(pathCacheKey(agentDir, s.id), s.path);
+    cacheSessionPath(s.id, s.path, agentDir);
+    const project = s.cwd ? projectByCwd.get(s.cwd) : undefined;
     return {
       path: s.path,
       id: s.id,
@@ -100,22 +110,40 @@ export async function listAllSessions(agentDir: string): Promise<SessionInfo[]> 
       modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
       messageCount: s.messageCount,
       firstMessage: s.firstMessage || "(no messages)",
-      parentSessionId: s.parentSessionPath ? pathToId.get(s.parentSessionPath) : undefined,
+      parentSessionId: s.parentSessionPath ? pathToId.get(normalizePath(s.parentSessionPath)) : undefined,
       productTitle: metadata?.title,
       productStatus: metadata?.status,
       lastResultSummary: metadata?.lastResultSummary,
+      projectRoot: project?.projectRoot ?? s.cwd,
+      ...(project?.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),
     };
   });
 }
 
+export async function listAllSessions(agentDir: string): Promise<SessionInfo[]> {
+  // Single-flight per agentDir so concurrent requests share one on-disk scan
+  // without ever mixing results across tenants (key = resolved agentDir).
+  const key = resolve(agentDir);
+  const cache = getSessionListPromiseCache();
+  let promise = cache.get(key);
+  if (!promise) {
+    promise = loadAllSessions(agentDir).finally(() => {
+      cache.delete(key);
+    });
+    cache.set(key, promise);
+  }
+  return promise;
+}
+
 // ============================================================================
-// Session path cache: sessionId → absolute file path
-// Stored in globalThis for hot-reload safety
-// 缓存键含 agentDir 前缀，杜绝跨租户穿透（欠陷2）：不同租户的 agentDir 不同，
-// 即便 sessionId 相同也不会命中彼此的路径。
+// Session path caches, stored in globalThis for hot-reload safety.
+// 缓存键含 agentDir 前缀，杜绝跨租户穿透：不同租户的 agentDir 不同，即便
+// sessionId 相同也不会命中彼此的路径。反向缓存以绝对路径为键，天然全局唯一。
 // ============================================================================
 declare global {
   var __piSessionPathCache: Map<string, string> | undefined;
+  var __piPathToSessionIdCache: Map<string, string> | undefined;
+  var __piSessionListPromises: Map<string, Promise<SessionInfo[]>> | undefined;
 }
 
 function getPathCache(): Map<string, string> {
@@ -123,12 +151,22 @@ function getPathCache(): Map<string, string> {
   return globalThis.__piSessionPathCache;
 }
 
+function getPathToIdCache(): Map<string, string> {
+  if (!globalThis.__piPathToSessionIdCache) globalThis.__piPathToSessionIdCache = new Map();
+  return globalThis.__piPathToSessionIdCache;
+}
+
+function getSessionListPromiseCache(): Map<string, Promise<SessionInfo[]>> {
+  if (!globalThis.__piSessionListPromises) globalThis.__piSessionListPromises = new Map();
+  return globalThis.__piSessionListPromises;
+}
+
 /** 缓存键 = agentDir 前缀 + sessionId，按租户隔离。 */
 function pathCacheKey(agentDir: string, sessionId: string): string {
   return `${resolve(agentDir)}\u0000${sessionId}`;
 }
 
-export async function resolveSessionPath(sessionId: string, agentDir: string): Promise<string | null> {
+export async function resolveSessionPath(sessionId: string, agentDir: string = getAgentDir()): Promise<string | null> {
   const key = pathCacheKey(agentDir, sessionId);
   const cached = getPathCache().get(key);
   if (cached) return cached;
@@ -138,12 +176,63 @@ export async function resolveSessionPath(sessionId: string, agentDir: string): P
   return getPathCache().get(key) ?? null;
 }
 
-export function cacheSessionPath(sessionId: string, filePath: string, agentDir: string): void {
-  getPathCache().set(pathCacheKey(agentDir, sessionId), filePath);
+export async function resolveSessionIdByPath(filePath: string, agentDir: string = getAgentDir()): Promise<string | undefined> {
+  const pathKey = normalizePath(filePath);
+  const cached = getPathToIdCache().get(pathKey);
+  if (cached) return cached;
+
+  await listAllSessions(agentDir);
+  return getPathToIdCache().get(pathKey);
 }
 
-export function invalidateSessionPathCache(sessionId: string, agentDir: string): void {
-  getPathCache().delete(pathCacheKey(agentDir, sessionId));
+export function cacheSessionPath(sessionId: string, filePath: string, agentDir: string = getAgentDir()): void {
+  const pathKey = normalizePath(filePath);
+  getPathCache().set(pathCacheKey(agentDir, sessionId), pathKey);
+  getPathToIdCache().set(pathKey, sessionId);
+}
+
+export function invalidateSessionPathCache(sessionId: string, agentDir: string = getAgentDir()): void {
+  const pathCache = getPathCache();
+  const reverseCache = getPathToIdCache();
+  const key = pathCacheKey(agentDir, sessionId);
+  const pathKey = pathCache.get(key);
+  pathCache.delete(key);
+  if (pathKey && reverseCache.get(pathKey) === sessionId) {
+    reverseCache.delete(pathKey);
+  }
+}
+
+export function readSessionHeader(filePath: string): SessionHeader | null {
+  const fd = openSync(filePath, "r");
+  try {
+    const chunks: Buffer[] = [];
+    const maxHeaderBytes = 64 * 1024;
+    let position = 0;
+    let foundNewline = false;
+
+    while (position < maxHeaderBytes && !foundNewline) {
+      const buffer = Buffer.allocUnsafe(Math.min(4096, maxHeaderBytes - position));
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, position);
+      if (bytesRead === 0) break;
+      const data = buffer.subarray(0, bytesRead);
+      const newlineIndex = data.indexOf(0x0a);
+      chunks.push(newlineIndex === -1 ? data : data.subarray(0, newlineIndex));
+      position += bytesRead;
+      foundNewline = newlineIndex !== -1;
+    }
+
+    if (!foundNewline && position >= maxHeaderBytes) return null;
+    const firstLine = Buffer.concat(chunks).toString("utf8").trimEnd();
+    if (!firstLine) return null;
+    try {
+      const header = JSON.parse(firstLine) as SessionHeader;
+      return header.type === "session" ? header : null;
+    } catch {
+      return null;
+    }
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function getSessionEntries(filePath: string): SessionEntry[] {
@@ -276,7 +365,11 @@ export function buildTree(entries: SessionEntry[]): SessionTreeNode[] {
   return roots;
 }
 
-export function buildSessionContext(entries: SessionEntry[], leafId?: string | null): SessionContext {
+export function buildSessionContext(
+  entries: SessionEntry[],
+  leafId?: string | null,
+  options: { deferThinking?: boolean; deferToolResultImages?: boolean } = {},
+): SessionContext {
   const byId = new Map<string, SessionEntry>();
   for (const e of entries) byId.set(e.id, e);
 
@@ -303,46 +396,25 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     cur = cur.parentId ? byId.get(cur.parentId) : undefined;
   }
 
-  // Find the last compaction on path (mirrors pi's buildSessionContext logic)
-  let compactionId: string | undefined;
-  let firstKeptEntryId: string | undefined;
+  // Build UI history from the FULL branch path (root to leaf), without trimming.
+  // pi's buildSessionContext targets LLM context: it drops everything before the last
+  // compaction's firstKeptEntryId. Correct for the model, but it would hide compacted
+  // history from the UI. We keep piCtx only for thinkingLevel/model, and render every
+  // displayable entry on the path ourselves; compaction/branch_summary entries become
+  // inline summary messages so the user still sees where context was compressed.
+  const messages: AgentMessage[] = [];
+  const entryIds: string[] = [];
   for (const e of path) {
-    if (e.type === "compaction") {
-      compactionId = e.id;
-      firstKeptEntryId = (e as { firstKeptEntryId: string }).firstKeptEntryId;
+    const m = entryToUiMessage(e, options);
+    if (m) {
+      messages.push(m);
+      entryIds.push(e.id);
     }
   }
-
-  const contextEntryIds: string[] = [];
-  if (compactionId) {
-    // The first message in piCtx.messages is the synthetic compaction summary — map to compaction entry id
-    contextEntryIds.push(compactionId);
-    const compactionIdx = path.findIndex((e) => e.id === compactionId);
-    const firstKeptIdx = firstKeptEntryId
-      ? path.findIndex((e, i) => i < compactionIdx && e.id === firstKeptEntryId)
-      : -1;
-    const startIdx = firstKeptIdx >= 0 ? firstKeptIdx : compactionIdx;
-    for (let i = startIdx; i < compactionIdx; i++) {
-      if (isContextMessageEntry(path[i])) contextEntryIds.push(path[i].id);
-    }
-    for (let i = compactionIdx + 1; i < path.length; i++) {
-      if (isContextMessageEntry(path[i])) contextEntryIds.push(path[i].id);
-    }
-  } else {
-    for (const e of path) {
-      if (isContextMessageEntry(e)) contextEntryIds.push(e.id);
-    }
-  }
-
-  const contextMessages = (piCtx.messages as AssistantMessage[]).map((msg) => {
-    return normalizeAgentMessage(normalizeToolCalls(msg as AgentMessage));
-  });
-
-  const display = filterDisplayMessages(contextMessages, contextEntryIds);
 
   return {
-    messages: display.messages,
-    entryIds: display.entryIds,
+    messages,
+    entryIds,
     thinkingLevel: piCtx.thinkingLevel,
     model: piCtx.model,
   };
@@ -353,23 +425,103 @@ export function getLeafId(entries: SessionEntry[]): string | null {
   return entries[entries.length - 1].id;
 }
 
-function isContextMessageEntry(entry: SessionEntry): boolean {
-  return entry.type === "message" || entry.type === "custom_message" || (entry.type === "branch_summary" && !!entry.summary);
+function parseEntryTimestamp(timestamp: string): number | undefined {
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function filterDisplayMessages(messages: AgentMessage[], entryIds: string[]): Pick<SessionContext, "messages" | "entryIds"> {
-  const displayMessages: AgentMessage[] = [];
-  const displayEntryIds: string[] = [];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
+function base64ImageInfo(block: unknown): { bytes: number; mime?: string } | null {
+  if (!isRecord(block) || block.type !== "image") return null;
 
-    displayMessages.push(msg);
-    displayEntryIds.push(entryIds[i] ?? "");
+  let data: string | undefined;
+  let mime: string | undefined;
+  if (typeof block.data === "string") {
+    data = block.data;
+    mime = typeof block.mimeType === "string" ? block.mimeType : undefined;
+  } else if (isRecord(block.source) && block.source.type === "base64" && typeof block.source.data === "string") {
+    data = block.source.data;
+    mime = typeof block.source.media_type === "string" ? block.source.media_type : undefined;
   }
+  if (!data) return null;
 
-  return {
-    messages: displayMessages,
-    entryIds: displayEntryIds,
-  };
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  return { bytes: Math.max(0, Math.floor(data.length * 3 / 4) - padding), mime };
+}
+
+function omitToolResultBase64Images(message: AgentMessage): AgentMessage {
+  if (message.role !== "toolResult") return message;
+
+  let omitted = 0;
+  let bytes = 0;
+  const mimes = new Set<string>();
+  const content = message.content.filter((block) => {
+    const image = base64ImageInfo(block);
+    if (!image) return true;
+    omitted += 1;
+    bytes += image.bytes;
+    if (image.mime) mimes.add(image.mime);
+    return false;
+  });
+  if (omitted === 0) return message;
+
+  const mimeText = mimes.size > 0 ? `: ${[...mimes].join(", ")}` : "";
+  content.push({
+    type: "text",
+    text: `[${omitted} tool result image${omitted === 1 ? "" : "s"} omitted from initial history payload${mimeText}, ~${bytes} bytes]`,
+  });
+  return { ...message, content };
+}
+
+// Convert a session entry on the active branch into a UI message.
+// Returns null for entries that do not map to chat history (metadata, non-message types).
+function entryToUiMessage(
+  entry: SessionEntry,
+  options: { deferThinking?: boolean; deferToolResultImages?: boolean },
+): AgentMessage | null {
+  switch (entry.type) {
+    case "message": {
+      const message = options.deferToolResultImages
+        ? omitToolResultBase64Images(normalizeToolCalls(entry.message))
+        : normalizeToolCalls(entry.message);
+      if (!options.deferThinking || message.role !== "assistant") return message;
+      return {
+        ...message,
+        content: message.content.map((block) => (
+          block.type === "thinking" && block.thinking.trim() !== ""
+            ? { ...block, thinking: "", deferred: true }
+            : block
+        )),
+      };
+    }
+    case "compaction":
+      return {
+        role: "timelineSummary",
+        kind: "compaction",
+        summary: entry.summary,
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+    case "branch_summary":
+      if (!entry.summary) return null;
+      return {
+        role: "timelineSummary",
+        kind: "branch",
+        summary: entry.summary,
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+    case "custom_message":
+      return {
+        role: "custom",
+        customType: entry.customType,
+        content: entry.content,
+        display: entry.display,
+        details: entry.details,
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+    default:
+      return null;
+  }
 }

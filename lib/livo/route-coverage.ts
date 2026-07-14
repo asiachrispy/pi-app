@@ -64,6 +64,7 @@ export const GLOBAL_AUTH_ROUTES: readonly string[] = [
   "cwd/validate",
   "default-cwd",
   "extensions",
+  "file-index",
   "files/stage",
   "git-branch",
   "home",
@@ -83,8 +84,11 @@ export const GLOBAL_AUTH_ROUTES: readonly string[] = [
   "remote/audit",
   "remote/client",
   "remote/pair",
+  "sessions/[id]/entries/[entryId]/thinking",
+  "sessions/[id]/state",
   "settings/default-model",
   "skills/search",
+  "worktrees",
 ] as const;
 
 export const LIVO_PUBLIC_ROUTES: readonly string[] = [
@@ -95,7 +99,6 @@ export const LIVO_PUBLIC_ROUTES: readonly string[] = [
 export const PUBLIC_ROUTES: readonly string[] = [
   "health",
   "share/[token]",
-  "sessions/new",
   "sessions/[id]/share",
 ] as const;
 

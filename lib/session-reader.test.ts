@@ -38,8 +38,9 @@ describe("session-reader", () => {
 
     const context = buildSessionContext(entries, "new");
 
-    expect(context.entryIds).toEqual(["cmp", "kept", "new"]);
-    expect(context.messages[0]).toMatchObject({
+    // Full branch path is kept for UI history (including pre-compaction messages).
+    expect(context.entryIds).toEqual(["old", "kept", "cmp", "new"]);
+    expect(context.messages[2]).toMatchObject({
       role: "timelineSummary",
       kind: "compaction",
       summary: "older summary",

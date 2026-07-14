@@ -11,6 +11,16 @@ import { getCachedAllowedRoots, setCachedAllowedRoots } from "@/lib/allowed-root
 import { livoUserWorkspaceRoot, readLivoSession } from "@/lib/livo-sso";
 import { currentAgentDir } from "@/lib/livo/tenant-gate";
 import { withTenant } from "@/lib/livo/with-tenant";
+import {
+  DOCX_PREVIEW_MAX_BYTES,
+  IMAGE_PREVIEW_MAX_BYTES,
+  TEXT_PREVIEW_MAX_BYTES,
+  documentPreviewKind,
+  getAudioMime,
+  getDocumentMime,
+  getFileExt,
+  getImageMime,
+} from "@/lib/file-types";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -20,56 +30,9 @@ const IGNORED_NAMES = new Set([
 
 const IGNORED_SUFFIXES = [".pyc"];
 
-const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
-const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
-const DOCX_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
-
-const IMAGE_EXT_TO_MIME: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  svg: "image/svg+xml",
-  bmp: "image/bmp",
-  ico: "image/x-icon",
-  avif: "image/avif",
-};
-
-const AUDIO_EXT_TO_MIME: Record<string, string> = {
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  ogg: "audio/ogg",
-  oga: "audio/ogg",
-  opus: "audio/ogg",
-  m4a: "audio/mp4",
-  aac: "audio/aac",
-  flac: "audio/flac",
-  weba: "audio/webm",
-  webm: "audio/webm",
-};
-
-const DOCUMENT_EXT_TO_MIME: Record<string, string> = {
-  pdf: "application/pdf",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-};
-
-function getExt(filePath: string): string {
-  const ext = path.basename(filePath).toLowerCase().split(".").pop() ?? "";
-  return ext;
-}
-
-function getImageMime(filePath: string): string | null {
-  return IMAGE_EXT_TO_MIME[getExt(filePath)] ?? null;
-}
-
-function getAudioMime(filePath: string): string | null {
-  return AUDIO_EXT_TO_MIME[getExt(filePath)] ?? null;
-}
-
-function getDocumentMime(filePath: string): string | null {
-  return DOCUMENT_EXT_TO_MIME[getExt(filePath)] ?? null;
-}
+const FILE_REQUEST_TYPES = ["list", "read", "download", "meta", "preview", "watch"] as const;
+type FileRequestType = typeof FILE_REQUEST_TYPES[number];
+const FILE_REQUEST_TYPE_SET = new Set<string>(FILE_REQUEST_TYPES);
 
 const EXT_TO_LANGUAGE: Record<string, string> = {
   ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
@@ -141,6 +104,10 @@ async function getAllowedRoots(): Promise<Set<string>> {
   return roots;
 }
 
+function parseFileRequestType(value: string): FileRequestType | null {
+  return FILE_REQUEST_TYPE_SET.has(value) ? (value as FileRequestType) : null;
+}
+
 function createFileBodyStream(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {
   const fileStream = fs.createReadStream(filePath, range);
   let closed = false;
@@ -188,29 +155,20 @@ function encodeHeaderValue(value: string): string {
   );
 }
 
-function getContentDisposition(filePath: string): string {
+function getContentDisposition(filePath: string, asDownload = false): string {
+  const disposition = asDownload ? "attachment" : "inline";
   const fileName = path.basename(filePath);
-  const unsafeHeaderChars = new RegExp(String.raw`[^\x20-\x7E]|["\\;\r\n]`, "g");
-  const fallback = fileName.replace(unsafeHeaderChars, "_") || "download";
-  return `inline; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
+  const fallback = fileName.replace(/[^\x20-\x7E]|["\\;\r\n]/g, "_") || "download";
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
 }
 
-function streamFile(
-  filePath: string,
-  stat: fs.Stats,
-  contentType: string,
-  rangeHeader: string | null,
-  inline = false,
-): Response {
+function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null, asDownload = false): Response {
   const headers: Record<string, string> = {
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
     "Accept-Ranges": "bytes",
-    "Content-Disposition": getContentDisposition(filePath),
+    "Content-Disposition": getContentDisposition(filePath, asDownload),
   };
-  if (inline) {
-    headers["Content-Disposition"] = getContentDisposition(filePath);
-  }
 
   if (!rangeHeader) {
     return new Response(createFileBodyStream(filePath), {
@@ -242,13 +200,6 @@ function streamFile(
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
     },
   });
-}
-
-function documentPreviewKind(filePath: string): "pdf" | "docx" | null {
-  const ext = getExt(filePath);
-  if (ext === "pdf") return "pdf";
-  if (ext === "docx") return "docx";
-  return null;
 }
 
 function escapeHtml(text: string): string {
@@ -319,7 +270,11 @@ export const GET = withTenant(async (
   try {
     const { path: segments } = await params;
     const filePath = filePathFromSegments(segments);
-    const type = request.nextUrl.searchParams.get("type") ?? "list";
+    const rawType = request.nextUrl.searchParams.get("type") ?? "list";
+    const type = parseFileRequestType(rawType);
+    if (!type) {
+      return NextResponse.json({ error: "Invalid file request type" }, { status: 400 });
+    }
     const livoSession = readLivoSession(request);
     const livoAllowedRoots = livoSession ? new Set([livoUserWorkspaceRoot(livoSession.livoUserId)]) : null;
 
@@ -350,12 +305,12 @@ export const GET = withTenant(async (
       if (!stat.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
-      const ext = getExt(filePath);
+      const ext = getFileExt(filePath);
       if (ext === "pdf") {
         if (stat.size > IMAGE_PREVIEW_MAX_BYTES) {
           return NextResponse.json({ error: "PDF too large (>10MB)" }, { status: 413 });
         }
-        return streamFile(filePath, stat, "application/pdf", request.headers.get("range"), true);
+        return streamFile(filePath, stat, "application/pdf", request.headers.get("range"));
       }
       const imageMime = getImageMime(filePath);
       if (imageMime) {
@@ -380,6 +335,14 @@ export const GET = withTenant(async (
       return NextResponse.json({ content, language, size: stat.size });
     }
 
+    if (type === "download") {
+      if (!stat.isFile()) {
+        return NextResponse.json({ error: "Not a file" }, { status: 400 });
+      }
+      const mime = getImageMime(filePath) || getAudioMime(filePath) || getDocumentMime(filePath) || "application/octet-stream";
+      return streamFile(filePath, stat, mime, request.headers.get("range"), true);
+    }
+
     if (type === "meta") {
       if (!stat.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
@@ -399,7 +362,7 @@ export const GET = withTenant(async (
       if (!stat.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
-      if (getExt(filePath) !== "docx") {
+      if (getFileExt(filePath) !== "docx") {
         return NextResponse.json({ error: "Preview not available for this file type" }, { status: 400 });
       }
       if (stat.size > DOCX_PREVIEW_MAX_BYTES) {

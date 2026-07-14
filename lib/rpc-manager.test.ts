@@ -27,6 +27,22 @@ const modelConfigMock = vi.hoisted(() => ({
 vi.mock("@earendil-works/pi-coding-agent", () => ({
   createAgentSession: agentSessionMock.createAgentSession,
   SessionManager: sessionManagerMock,
+  Theme: class Theme {
+    constructor(..._args: unknown[]) {}
+    fg(_color: unknown, text: string) { return text; }
+    bg(_color: unknown, text: string) { return text; }
+    bold(text: string) { return text; }
+    italic(text: string) { return text; }
+    underline(text: string) { return text; }
+    inverse(text: string) { return text; }
+    strikethrough(text: string) { return text; }
+    getFgAnsi() { return ""; }
+    getBgAnsi() { return ""; }
+    getThinkingBorderColor() { return (text: string) => text; }
+    getBashModeBorderColor() { return (text: string) => text; }
+  },
+  DEFAULT_COMPACTION_SETTINGS: {},
+  findCutPoint: vi.fn(),
 }));
 
 vi.mock("@/lib/agent-resource-loader", () => ({

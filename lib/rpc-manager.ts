@@ -1,4 +1,4 @@
-import { createAgentSession, DEFAULT_COMPACTION_SETTINGS, findCutPoint, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DEFAULT_COMPACTION_SETTINGS, findCutPoint, SessionManager, Theme } from "@earendil-works/pi-coding-agent";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "crypto";
 import { tmpdir } from "node:os";
@@ -61,6 +61,33 @@ type ExtensionBindingOptions = {
 };
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+
+// Extensions require a complete Theme, while the web UI applies its own styling.
+class PlainTextTheme extends Theme {
+  constructor() {
+    super(
+      { thinkingXhigh: "" } as ConstructorParameters<typeof Theme>[0],
+      {} as ConstructorParameters<typeof Theme>[1],
+      "truecolor",
+    );
+  }
+
+  override fg(...[, text]: Parameters<Theme["fg"]>): string { return text; }
+  override bg(...[, text]: Parameters<Theme["bg"]>): string { return text; }
+  override bold(text: string): string { return text; }
+  override italic(text: string): string { return text; }
+  override underline(text: string): string { return text; }
+  override inverse(text: string): string { return text; }
+  override strikethrough(text: string): string { return text; }
+  override getFgAnsi(): string { return ""; }
+  override getBgAnsi(): string { return ""; }
+  override getThinkingBorderColor(): (text: string) => string {
+    return (text) => text;
+  }
+  override getBashModeBorderColor(): (text: string) => string { return (text) => text; }
+}
+
+const PLAIN_TEXT_THEME = new PlainTextTheme();
 
 function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
   if (toolNames.length === 0) return [];
@@ -311,7 +338,11 @@ export class AgentSessionWrapper {
           autoRetryEnabled: this.inner.autoRetryEnabled,
           model: model ? { id: model.id, provider: model.provider } : undefined,
           messageCount: 0,
-          pendingMessageCount: 0,
+          pendingMessageCount: this.inner.pendingMessageCount,
+          queuedMessages: {
+            steering: [...this.inner.getSteeringMessages()],
+            followUp: [...this.inner.getFollowUpMessages()],
+          },
           contextUsage: contextUsage
             ? { percent: contextUsage.percent, contextWindow: contextUsage.contextWindow, tokens: contextUsage.tokens }
             : null,
@@ -444,6 +475,12 @@ export class AgentSessionWrapper {
       case "set_auto_compaction": {
         this.inner.setAutoCompactionEnabled(command.enabled as boolean);
         return null;
+      }
+
+      case "clear_queue": {
+        // Full clear only: pi has no single-item dequeue, and clear+requeue
+        // races against the agent loop pulling messages mid-flight.
+        return this.inner.clearQueue();
       }
 
       case "steer": {
@@ -838,7 +875,7 @@ export class AgentSessionWrapper {
       addAutocompleteProvider: () => {},
       setEditorComponent: () => {},
       getEditorComponent: () => undefined,
-      get theme() { return undefined; },
+      get theme() { return PLAIN_TEXT_THEME; },
       getAllThemes: () => [],
       getTheme: () => undefined,
       setTheme: () => ({ success: false, error: "Theme switching is not supported in pi-web extension UI yet" }),
