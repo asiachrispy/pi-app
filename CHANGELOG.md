@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **补回 ChatInput i18n**：合并上游后输入区硬编码英文，重新接入 `useI18n`（含 slash/@ 菜单与队列相关新文案）。
+
 ## [0.8.18] - 2026-07-14
 
 **Bundle:** `0.8.18p0.80.3` (pi-app + `@livos/pi-coding-agent`)
@@ -12,9 +15,6 @@
 
 ### Fixed
 - 合并后测试与路由清单：`Theme` mock、route-coverage（file-index / thinking / state / worktrees）、DELETE 归属校验先走 `SessionManager`、slash menu `scrollIntoView` jsdom 兼容。
-
-### Notes
-- **跟进**：`ChatInput` / `ChatWindow` 本轮偏上游结构，i18n 文案需后续补回。
 
 ## [0.8.17] - 2026-07-04
 
