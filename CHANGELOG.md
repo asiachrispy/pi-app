@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.8.18] - 2026-07-14
+
+**Bundle:** `0.8.18p0.80.3` (pi-app + `@livos/pi-coding-agent`)
+
+### Changed
+- **合并上游 agegr/pi-web（v0.7.5–v0.7.11）**：`upstream` 改回真正上游 `agegr/pi-web`，合入 git worktree、@ 文件提及 / file-index、slash 命令面板与 queued messages、deferred thinking/media、plugins 配置、compaction 历史与 file-links、sidebar 运行态 SSE、session state reconciliation、工具 preset 抽到 `lib/tool-presets`（删除 `ToolPanel` / `sessions/new`）。保留鉴权、租户、macOS standalone、i18n（AppShell / Sidebar / MessageView / FileViewer）与 `timelineSummary` 展示。合并提交 `b15a003`。
+- **部署**：199 / `pi.gottao.com` 更新至 release `pi-app-runtime-livo-sso-20260714141047`（bundle-only）。
+
+### Fixed
+- 合并后测试与路由清单：`Theme` mock、route-coverage（file-index / thinking / state / worktrees）、DELETE 归属校验先走 `SessionManager`、slash menu `scrollIntoView` jsdom 兼容。
+
+### Notes
+- **跟进**：`ChatInput` / `ChatWindow` 本轮偏上游结构，i18n 文案需后续补回。
+
 ## [0.8.17] - 2026-07-04
 
 **Bundle:** `0.8.17p0.80.3` (pi-app + `@livos/pi-coding-agent`)
