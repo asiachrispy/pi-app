@@ -33,7 +33,8 @@
     "dev": "PI_CODING_AGENT_DIR=~/tmp/pi-dev-agent NEXT_DIST_DIR=.next-dev-30142 next dev -p 30142",
     "dev:prod": "echo 'WARNING: next dev on 30141 hot-reloads with source edits; use npm start for daily 30141.' >&2 && next dev -p 30141",
     "build": "next build --webpack",
-    "start": "next start -p 30141",
+    "start": "next start -H 127.0.0.1 -p 30141",
+    "start:lan": "next start -H 0.0.0.0 -p 30141",
     "lint": "eslint .",
     "test": "NODE_ENV=development vitest",
     "test:run": "NODE_ENV=development vitest run",
@@ -58,10 +59,13 @@
     "prepublishOnly": "tsc --noEmit && node_modules/.bin/vitest run"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "npm:@livos/pi-agent-core@0.80.3",
     "@earendil-works/pi-ai": "npm:@livos/pi-ai@0.80.3",
     "@earendil-works/pi-coding-agent": "npm:@livos/pi-coding-agent@0.80.3",
+    "@earendil-works/pi-tui": "npm:@livos/pi-tui@0.80.3",
     "@lobehub/icons": "5.10.0",
     "@types/react-syntax-highlighter": "15.5.13",
+    "js-yaml": "5.2.3",
     "katex": "0.17.0",
     "mammoth": "1.12.0",
     "mermaid": "11.15.0",
@@ -77,6 +81,7 @@
     "rehype-raw": "7.0.0",
     "rehype-sanitize": "6.0.0",
     "remark-gfm": "4.0.1",
+    "remark-frontmatter": "5.0.0",
     "remark-math": "6.0.0",
     "web-push": "3.6.7",
     "yaml": "2.9.0"
@@ -84,6 +89,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.0",
     "@testing-library/react": "16.3.2",
+    "@types/js-yaml": "4.0.9",
     "@types/node": "25.9.2",
     "@types/qrcode": "1.5.5",
     "@types/react": "19.2.17",

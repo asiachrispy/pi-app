@@ -74,7 +74,11 @@ function fileUrlToPath(href: string): string | null {
   }
 }
 
-export function resolveLocalFileHref(href: string | undefined, cwd?: string): string | null {
+export function resolveLocalFileHref(
+  href: string | undefined,
+  baseDir?: string,
+  relativeRoot = baseDir,
+): string | null {
   if (!href) return null;
 
   const cleanHref = href.split("#", 1)[0].split("?", 1)[0].trim();
@@ -102,14 +106,43 @@ export function resolveLocalFileHref(href: string | undefined, cwd?: string): st
   } else if (normalizedHref.startsWith("/")) {
     candidate = normalizedHref;
     candidateKind = "absolute";
-  } else if (cwd && looksLikeRelativeFileHref(normalizedHref)) {
-    candidate = `${normalizeFilePathSlashes(cwd).replace(/\/+$/, "")}/${normalizedHref}`;
+  } else if (baseDir && looksLikeRelativeFileHref(normalizedHref)) {
+    candidate = `${normalizeFilePathSlashes(baseDir).replace(/\/+$/, "")}/${normalizedHref}`;
     candidateKind = "relative";
   }
 
   if (!candidate) return null;
 
   const filePath = stripLineSuffix(normalizeLocalPath(candidate));
-  if (candidateKind === "relative" && cwd && !isPathInside(filePath, cwd)) return null;
+  if (candidateKind === "relative" && relativeRoot && !isPathInside(filePath, relativeRoot)) return null;
   return filePath;
+}
+
+/** Resolve a filesystem path without applying URL or source-location syntax. */
+export function resolveLocalFilePath(filePath: string | undefined, baseDir?: string): string | null {
+  if (!filePath) return null;
+
+  const windowsStyle = /^[a-zA-Z]:[\\/]/.test(filePath) ||
+    filePath.startsWith("\\\\") ||
+    (baseDir !== undefined && (/^[a-zA-Z]:[\\/]/.test(baseDir) || baseDir.startsWith("\\\\")));
+  const normalizeSlashes = (value: string) => windowsStyle ? value.replace(/\\/g, "/") : value;
+  const normalizedPath = normalizeSlashes(filePath);
+  const normalizedBase = baseDir ? normalizeSlashes(baseDir).replace(/\/+$/, "") : undefined;
+
+  const isDriveAbsolute = /^[a-zA-Z]:\//.test(normalizedPath);
+  const isUncAbsolute = normalizedPath.startsWith("//");
+  let candidate: string;
+
+  if (isDriveAbsolute || isUncAbsolute) {
+    candidate = normalizedPath;
+  } else if (normalizedPath.startsWith("/")) {
+    const windowsRoot = normalizedBase?.match(/^([a-zA-Z]:)(?:\/|$)/)?.[1]
+      ?? normalizedBase?.match(/^(\/\/[^/]+\/[^/]+)(?:\/|$)/)?.[1];
+    candidate = windowsRoot ? `${windowsRoot}${normalizedPath}` : normalizedPath;
+  } else {
+    if (!normalizedBase) return null;
+    candidate = `${normalizedBase}/${normalizedPath}`;
+  }
+
+  return normalizeLocalPath(candidate);
 }
