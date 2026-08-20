@@ -12,6 +12,7 @@ import { normalizeToolCalls } from "./normalize";
 import { loadPiWebPreferences } from "./pi-web-preferences";
 import { readProductSessionMetadataMap } from "./scene-metadata";
 import { getPickerCwds, isSystemTempCwd } from "./session-projects";
+import { projectIdentityKey } from "./project-identity";
 import { resolveProject, type ProjectInfo } from "./worktree";
 
 export { getAgentDir };
@@ -115,6 +116,7 @@ async function loadAllSessions(agentDir: string): Promise<SessionInfo[]> {
       productStatus: metadata?.status,
       lastResultSummary: metadata?.lastResultSummary,
       projectRoot: project?.projectRoot ?? s.cwd,
+      projectKey: projectIdentityKey(project?.projectRoot ?? s.cwd),
       ...(project?.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),
     };
   });

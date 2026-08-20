@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **合并上游 agegr/pi-web v0.8.9（12 commits）**：`upstream/main` 从 `77e482d` 合并至 `2a6e537`。吸收 project identity（`/api/cwd/validate`、`/api/worktrees` 返回 `projectKey`/`currentWorktreePath`，`session-reader` 写 `projectKey`）、工具执行进度、聊天通知居中、shutdown 信号转发（`process-lifecycle`）。保留 Livo 多租户 / `@livos/pi-*@0.80.3` / `createAgentSession` 体系与 SessionSidebar / AppShell 成熟实现；上游 services 体系 bash 扩展（`project-command-env` 需 SDK `InlineExtension`）与 project-identity UI 重构未启用。
+
 ### Fixed
 - **补回 ChatInput i18n**：合并上游后输入区硬编码英文，重新接入 `useI18n`（含 slash/@ 菜单与队列相关新文案）。
 

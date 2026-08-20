@@ -7,6 +7,8 @@ import { rememberWorkspaceCwd } from "@/lib/pi-web-preferences";
 import { invalidateAllowedRootsCache } from "@/lib/allowed-roots-cache";
 import { readLivoSession, resolveLivoUserWorkspacePath } from "@/lib/livo-sso";
 import { allowFileRoot } from "@/lib/file-access";
+import { projectIdentityKey } from "@/lib/project-identity";
+import { resolveProject } from "@/lib/worktree";
 
 function normalizeCwd(cwd: string): string {
   if (cwd === "~") return homedir();
@@ -56,7 +58,13 @@ export async function POST(req: Request) {
       // Best-effort: failing to persist the recent-workspaces list must not turn
       // a successful validation into an error response.
     }
-    return NextResponse.json({ success: true, cwd: normalizedCwd });
+    const project = await resolveProject(normalizedCwd);
+    return NextResponse.json({
+      success: true,
+      cwd: normalizedCwd,
+      projectRoot: project.projectRoot,
+      projectKey: projectIdentityKey(project.projectRoot),
+    });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

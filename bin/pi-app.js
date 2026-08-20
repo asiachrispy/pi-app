@@ -11,6 +11,8 @@ const fs = require("fs");
 const { parseArgs } = require("util");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const os = require("os");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { wireChildProcessLifecycle } = require("./process-lifecycle");
 
 const pkgDir = path.join(__dirname, "..");
 const nextDir = path.join(pkgDir, ".next");
@@ -107,6 +109,7 @@ const child = spawn(process.execPath, spawnArgs, {
   stdio: ["inherit", "pipe", "inherit"],
   env: childEnv,
 });
+wireChildProcessLifecycle(child);
 
 let browserOpened = false;
 const openHost = !hostname || hostname === "0.0.0.0" ? "localhost" : hostname;
@@ -124,4 +127,3 @@ child.stdout.on("data", (chunk) => {
   }
 });
 
-child.on("exit", (code) => process.exit(code ?? 0));

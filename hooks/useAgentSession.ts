@@ -13,6 +13,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand, sendAgentNewCommand } from "@/lib/agent-client";
 import { getToolNamesForPreset, type ToolEntry } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
 
 export interface SessionData {
   sessionId: string;
@@ -111,7 +112,7 @@ type NoticeAction =
 export type AgentPhase =
   | { kind: "waiting_model" }
   | { kind: "running_command" }
-  | { kind: "running_tools"; tools: { id: string; name: string }[] }
+  | { kind: "running_tools"; tools: { id: string; name: string; progress?: string }[] }
   | null;
 
 export interface CompactResultInfo {
@@ -952,6 +953,25 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });
           return { kind: "running_tools", tools };
+        });
+        break;
+      }
+      case "tool_execution_update": {
+        const id = event.toolCallId as string;
+        const name = event.toolName as string;
+        const progress = getToolExecutionProgress(event.partialResult);
+        setAgentPhase((prev) => {
+          const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
+          const existing = tools.find((tool) => tool.id === id);
+          const updated = {
+            id,
+            name: name || existing?.name || "tool",
+            progress: progress ?? existing?.progress,
+          };
+          return {
+            kind: "running_tools",
+            tools: [...tools.filter((tool) => tool.id !== id), updated],
+          };
         });
         break;
       }

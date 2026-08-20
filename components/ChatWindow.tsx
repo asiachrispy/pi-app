@@ -31,6 +31,10 @@ interface Props {
 
 function phaseLabel(phase: AgentPhase): string {
   if (phase?.kind === "running_tools") {
+    const latest = phase.tools[phase.tools.length - 1];
+    if (latest?.progress) {
+      return `Running ${latest.name}... ${latest.progress}`;
+    }
     const names = phase.tools.map((t) => t.name);
     if (names.length === 0) return "Running tool...";
     if (names.length === 1) return `Running ${names[0]}...`;
@@ -347,6 +351,22 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         />
       )}
 
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          left: 0,
+          right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
+          zIndex: 40,
+          display: "flex",
+          justifyContent: "center",
+          padding: `0 ${CHAT_COLUMN_PADDING}px`,
+          pointerEvents: "none",
+        }}
+      >
+        <NoticeShelf notices={notices} floating />
+      </div>
+
       {isEmptyNew ? (
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
           <div className="w-full max-w-[820px]">
@@ -375,28 +395,12 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 </span>
               </div>
             </div>
-            <NoticeShelf notices={notices} align="right" />
             {chatInputElement}
           </div>
         </div>
       ) : (
       <>
       <div className="relative flex flex-1 overflow-hidden">
-        <div
-          style={{
-            position: "absolute",
-            top: 12,
-            left: 0,
-            right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
-            zIndex: 40,
-            padding: `0 ${CHAT_COLUMN_PADDING}px`,
-            pointerEvents: "none",
-          }}
-        >
-          <div style={{ maxWidth: 820, margin: "0 auto" }}>
-            <NoticeShelf notices={notices} floating align="right" />
-          </div>
-        </div>
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-4 [scrollbar-width:none]">
           <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
             <div style={{ maxWidth: 820, margin: "0 auto" }}>
@@ -568,7 +572,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             )}
 
             {agentRunning && !streamState.streamingMessage && (
-              <div className="py-2 text-[13px] text-text-muted">
+              <div className="break-words py-2 text-[13px] text-text-muted">
                 <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase)}</span>
               </div>
             )}
@@ -664,14 +668,14 @@ function ExtensionWidgets({ widgets }: { widgets: Array<{ key: string; lines: st
   );
 }
 
-function NoticeShelf({ notices, floating = false, align = "left" }: { notices: NoticeItem[]; floating?: boolean; align?: "left" | "right" }) {
+function NoticeShelf({ notices, floating = false }: { notices: NoticeItem[]; floating?: boolean }) {
   if (notices.length === 0) return null;
   return (
     <div
       style={{
         display: "flex",
         flexDirection: "column",
-        alignItems: align === "right" ? "flex-end" : "stretch",
+        alignItems: "center",
         marginBottom: floating ? 0 : 10,
       }}
     >
